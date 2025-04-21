@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Register</title>
+</head>
+<body>
+  <h2>Register</h2>
+  <form id="registerForm">
+    <label>Username:</label><br>
+    <input type="text" name="username" required><br>
+    <label>Password:</label><br>
+    <input type="password" name="password" required><br><br>
+    <button type="submit">Register</button>
+  </form>
+
+  <div id="result"></div>
+  <a href="index.html">Back</a>
+
+  <script>
+    const form = document.getElementById("registerForm");
+    form.addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const formData = new FormData(form);
+
+      const response = await fetch("/api/register", {
+        method: "POST",
+        body: formData
+      });
+
+      const result = document.getElementById("result");
+      if (response.ok) {
+        const data = await response.json();
+        result.innerHTML = "<p>Registration success! Your API key: <code>" + data.api_key + "</code></p>";
+      } else {
+        const error = await response.json();
+        result.innerHTML = "<p style='color:red;'>Error: " + error.detail + "</p>";
+      }
+    });
+  </script>
+</body>
+</html>
+
