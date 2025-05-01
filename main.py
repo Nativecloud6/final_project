@@ -26,6 +26,7 @@ class User(Base):
     password_hash = Column(String)
     api_key = Column(String, unique=True, index=True)
     session_token = Column(String, index=True, nullable=True)  # ✅ new
+    role = Column(String, default="user") #for rack management
 
 Base.metadata.create_all(bind=engine)
 
@@ -57,15 +58,16 @@ async def static_redirect(page_name: str):
     raise HTTPException(status_code=404, detail="Page not found")
 
 # ✅ Registration
+# added role parameter to the registration endpoint
 @app.post("/api/register")
-def register(username: str = Form(...), password: str = Form(...), db=Depends(get_db)):
+def register(username: str = Form(...), password: str = Form(...), role: str = Form("user"), db=Depends(get_db)):
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="User already exists")
 
     password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     api_key = secrets.token_hex(16)
     session_token = str(uuid.uuid4())
-    user = User(username=username, password_hash=password_hash, api_key=api_key, session_token=session_token)
+    user = User(username=username, password_hash=password_hash, api_key=api_key, session_token=session_token, role=role)
     db.add(user)
     db.commit()
     return {"api_key": api_key, "session_token": session_token}
