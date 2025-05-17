@@ -17,8 +17,10 @@ export function LoginForm() {
 
     if (res.ok) {
       router.push("/dashboard")
+    } else if (res.status === 401) {
+      alert("Incorrect username or password.")
     } else {
-      alert("Login failed")
+      alert("Login failed with unexpected error.")
     }
   }
 
@@ -32,9 +34,11 @@ export function LoginForm() {
     if (res.ok) {
       alert("Registered successfully. Logging in...")
       await handleLogin()
-    } else {
+    } else if (res.status === 400) {
       const data = await res.json()
-      alert(`Register failed: ${data.message}`)
+      alert(data.detail || "User already exists.")
+    } else {
+      alert("Registration failed with unexpected error.")
     }
   }
 
@@ -69,6 +73,7 @@ export function LoginForm() {
     </div>
   )
 }
+
 export default function Home() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background">

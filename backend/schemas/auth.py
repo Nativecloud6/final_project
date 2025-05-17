@@ -13,3 +13,7 @@ class LoginResponse(BaseModel):
     status: str
     user: UserResponse
     token: str
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str

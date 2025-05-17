@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles  # ✅ This line is required
 
 # Import both DB bases and engines
 from .schemas.database import DCBase, dc_engine, UserBase, user_engine
@@ -19,6 +20,7 @@ DCBase.metadata.create_all(bind=dc_engine)
 UserBase.metadata.create_all(bind=user_engine)
 
 app = FastAPI(title="Data Center Management System")
+app.mount("/static", StaticFiles(directory="DCM_frontend", html=True), name="static")
 
 # Include routers
 app.include_router(datacenter_routes.router)

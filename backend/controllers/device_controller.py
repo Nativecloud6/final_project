@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from ..schemas import models
+from ..schemas import datacenter
 from ..schemas.device import DeviceCreate, DeviceInstall
 
 def create_device(db: Session, dev: DeviceCreate):
-    db_dev = models.Device(
+    db_dev = datacenter.Device(
         name=dev.name,
         model=dev.model,
         service=dev.service,
@@ -18,7 +18,7 @@ def create_device(db: Session, dev: DeviceCreate):
     return db_dev
 
 def install_device(db: Session, device_id: int, ins: DeviceInstall):
-    device = db.query(models.Device).filter(models.Device.id == device_id).first()
+    device = db.query(datacenter.Device).filter(datacenter.Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     device.data_center_id = ins.data_center_id
@@ -27,7 +27,7 @@ def install_device(db: Session, device_id: int, ins: DeviceInstall):
     device.start_unit = ins.start_unit
     device.end_unit = ins.end_unit
     device.state = ins.state
-    rack = db.query(models.Rack).filter(models.Rack.id == ins.rack_id).first()
+    rack = db.query(datacenter.Rack).filter(datacenter.Rack.id == ins.rack_id).first()
     if rack:
         rack.used_units += (ins.end_unit - ins.start_unit + 1)
     db.commit()
@@ -40,11 +40,11 @@ def install_device(db: Session, device_id: int, ins: DeviceInstall):
     return device
 
 def uninstall_device(db: Session, device_id: int):
-    device = db.query(models.Device).filter(models.Device.id == device_id).first()
+    device = db.query(datacenter.Device).filter(datacenter.Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     if device.rack_id and device.start_unit is not None and device.end_unit is not None:
-        rack = db.query(models.Rack).filter(models.Rack.id == device.rack_id).first()
+        rack = db.query(datacenter.Rack).filter(datacenter.Rack.id == device.rack_id).first()
         if rack:
             rack.used_units -= (device.end_unit - device.start_unit + 1)
     device.data_center_id = None

@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 user_DATABASE_URL = "sqlite:///./database/user.db"
 ip_DATABASE_URL = "sqlite:///./database/ip.db"
-server_DATABASE_URL = "sqlite:///./database/server.db"
+rack_DATABASE_URL = "sqlite:///./database/rack.db"
 
 user_engine = create_engine(
     user_DATABASE_URL, connect_args={"check_same_thread": False}
@@ -29,14 +29,36 @@ def get_ip_db():
     finally:
         db.close()
 
-server_engine = create_engine(
-    server_DATABASE_URL, connect_args={"check_same_thread": False}
+rack_engine = create_engine(
+    rack_DATABASE_URL, connect_args={"check_same_thread": False}
 )
-server_SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=server_engine)
+rack_SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=rack_engine)
 
-def get_server_db():
-    db = server_SessionLocal()
+def get_rack_db():
+    db = rack_SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+
+
+
+import hashlib
+import uuid
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return hash_password(plain_password) == hashed_password
+
+def generate_token() -> str:
+    return str(uuid.uuid4())
+
+
+
+
+
+

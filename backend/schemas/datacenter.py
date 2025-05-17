@@ -1,16 +1,44 @@
 from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
-from .database import Base
+from .database import DCBase
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from datetime import datetime
+from pydantic import BaseModel
+from typing import List
+from .room import RoomDetail
 
-class DataCenter(Base):
+
+class DataCenterBase(BaseModel):
+    name: str
+
+class DataCenterCreate(BaseModel):
+    name:str
+
+class DataCenterResponse(BaseModel):
+    status: str
+    id: int
+    name: str
+
+class Msg(BaseModel):
+    status: str
+    message: str
+
+class DataCenterDetail(BaseModel):
+    id: int
+    name: str
+    rooms: List[RoomDetail] = []
+
+    class Config:
+        from_attributes = True
+# below is what 史昀玉 modified
+
+class DataCenter(DCBase):
     __tablename__ = "data_centers"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     rooms = relationship("Room", back_populates="data_center", cascade="all, delete")
 
-class Room(Base):
+class Room(DCBase):
     __tablename__ = "rooms"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
@@ -18,7 +46,7 @@ class Room(Base):
     data_center = relationship("DataCenter", back_populates="rooms")
     racks = relationship("Rack", back_populates="room", cascade="all, delete")
 
-class Rack(Base):
+class Rack(DCBase):
     __tablename__ = "racks"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
@@ -28,7 +56,7 @@ class Rack(Base):
     room = relationship("Room", back_populates="racks")
     devices = relationship("Device", back_populates="rack", cascade="all, delete")
 
-class Device(Base):
+class Device(DCBase):
     __tablename__ = "devices"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
@@ -43,13 +71,13 @@ class Device(Base):
     end_unit = Column(Integer, nullable=True)
     rack = relationship("Rack", back_populates="devices")
     
-class IPRange(Base):
+class IPRange(DCBase):
     __tablename__ = "ip_ranges"
     id       = Column(Integer, primary_key=True, index=True)
     dc_id    = Column(Integer, ForeignKey("data_centers.id"), nullable=False)
     cidr     = Column(String, nullable=False)
 
-class IPAssignment(Base):
+class IPAssignment(DCBase):
     __tablename__ = "ip_assignments"
     id        = Column(Integer, primary_key=True, index=True)
     ip        = Column(String, nullable=False, unique=True)

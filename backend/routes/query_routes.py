@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from ..controllers import query_controller
 from ..schemas.database import get_dc_db
 from ..schemas.query import DeviceSearchResponse
-from ..schemas.models import DataCenter, Room, Rack
+from ..schemas.datacenter import DataCenter, Room, Rack
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
 

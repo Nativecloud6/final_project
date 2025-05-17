@@ -1,21 +1,22 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from ..schemas import models
-from ..schemas.room import RoomCreate
+from ..schemas import datacenter
 
-def create_room(db: Session, dc_id: int, room: RoomCreate):
-    if not db.query(models.DataCenter).filter(models.DataCenter.id == dc_id).first():
-        raise HTTPException(status_code=404, detail="DataCenter not found")
-    db_room = models.Room(name=room.name, data_center_id=dc_id)
-    db.add(db_room)
+def create_data_center(db: Session, dc: datacenter.DataCenterCreate):
+    db_dc = datacenter.DataCenter(name=dc.name)
+    db.add(db_dc)
     db.commit()
-    db.refresh(db_room)
-    return db_room
+    db.refresh(db_dc)
+    return db_dc
 
-def delete_room(db: Session, room_id: int):
-    rm = db.query(models.Room).filter(models.Room.id == room_id).first()
-    if not rm:
-        raise HTTPException(status_code=404, detail="Room not found")
-    db.delete(rm)
+def get_data_centers(db: Session):
+    return db.query(datacenter.DataCenter).all()
+
+def delete_data_center(db: Session, dc_id: int):
+    dc = db.query(datacenter.DataCenter).filter(datacenter.DataCenter.id == dc_id).first()
+    if not dc:
+        raise HTTPException(status_code=404, detail="DataCenter not found")
+    db.delete(dc)
     db.commit()
     return {"status": "success", "message": "Deleted successfully"}
+

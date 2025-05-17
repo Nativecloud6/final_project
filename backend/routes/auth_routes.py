@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
-from schemas.auth import RegisterRequest, LoginRequest, LoginResponse, UserResponse
-from schemas.database import get_user_db
-from models.user import User
+from ..schemas.auth import RegisterRequest, LoginRequest, LoginResponse, UserResponse
+from ..schemas.database import get_user_db
+from ..schemas.user import User
 from dependencies import hash_password, verify_password, generate_token
 
 router = APIRouter()

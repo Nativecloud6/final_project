@@ -6,7 +6,7 @@ from ..controllers.ip_controller import (
     allocate_ip,
     release_ip,
 )
-from ..schemas.database import get_db
+from ..schemas.database import get_dc_db
 from ..schemas.ip import (
     IPRangeCreate,
     IPAllocateRequest,
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/ips", tags=["ips"])
 @router.post("", response_model=IPRangeResponse)
 def post_create_range(
     payload: IPRangeCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_dc_db)
 ):
     rec = create_ip_range(db, payload)
     return {
@@ -32,7 +32,7 @@ def post_create_range(
 @router.post("/allocate", response_model=IPAssignmentResponse)
 def post_allocate(
     payload: IPAllocateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_dc_db)
 ):
     rec = allocate_ip(db, payload.range_id)
     return {
@@ -47,7 +47,7 @@ def post_allocate(
 @router.post("/release", response_model=IPAssignmentResponse)
 def post_release(
     payload: IPReleaseRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_dc_db)
 ):
     rec = release_ip(db, payload.ip)
     return {
