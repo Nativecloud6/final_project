@@ -8,6 +8,22 @@ import bcrypt
 import secrets
 import uuid
 
+from backend.schemas.database import DCBase, dc_engine, UserBase, user_engine
+from backend.routes import (
+    datacenter_routes,
+    room_routes,
+    rack_routes,
+    device_routes,
+    ip_routes,
+    auth_routes,
+    query_routes,
+)
+from backend.schemas.auth import LoginRequest, LoginResponse, UserResponse
+
+# Create tables for both databases
+# DCBase.metadata.create_all(bind=dc_engine)
+# UserBase.metadata.create_all(bind=user_engine)
+
 app = FastAPI()
 
 # ✅ Static file serving
@@ -36,6 +52,15 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Include routers
+app.include_router(datacenter_routes.router)
+app.include_router(room_routes.router)
+app.include_router(rack_routes.router)
+app.include_router(device_routes.router)
+app.include_router(query_routes.router)
+app.include_router(ip_routes.router)
+app.include_router(auth_routes.router)
 
 # ✅ Smart static page redirect (e.g. /register -> /static/register/index.html)
 @app.get("/{page_name:path}")
