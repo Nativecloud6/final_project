@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from ..schemas import models
+from ..schemas import datacenter
 from ..schemas.datacenter import DataCenterCreate
 
 def create_data_center(db: Session, dc: DataCenterCreate):

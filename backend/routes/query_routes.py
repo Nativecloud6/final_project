@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from ..controllers import query_controller
-from ..schemas.database import get_db
+from ..schemas.database import get_dc_db
 from ..schemas.query import DeviceSearchResponse
-from ..schemas.models import DataCenter, Room, Rack
+from ..schemas.datacenter import DataCenter, Room, Rack
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
 
 @router.get("/search", response_model=DeviceSearchResponse)
-def search_device(query: str = Query(...), db: Session = Depends(get_db)):
+def search_device(query: str = Query(...), db: Session = Depends(get_dc_db)):
     d = query_controller.search_device(db, query)
     d.ip = d.ip_address
     if d.start_unit is not None and d.end_unit is not None:
