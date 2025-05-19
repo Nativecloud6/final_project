@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from ..schemas.ip import IPRangeCreate, IPAllocateRequest
 from ..schemas import ip
-from ..schemas.datacenter import Device
+from ..schemas.datacenter import Device, IPAssignment, IPRange
 import ipaddress
 from datetime import datetime
 # from ..services.ip_service import create_range, allocate_ip as svc_allocate, release_ip as svc_release
@@ -17,7 +17,7 @@ def release_ip(db: Session, ip: str):
     return svc_release(db, ip)
 
 def getIPInformationByIP(db: Session, ip_address: str):
-    ip_adrs = db.query(ip.IP).filter(ip.IP.ip == ip_address).first()
+    ip_adrs = db.query(IPAssignment).filter(IPAssignment.ip == ip_address).first()
     return {
         "id": ip_adrs.id,
         "ip": ip_adrs.ip,
@@ -28,7 +28,7 @@ def getIPInformationByIP(db: Session, ip_address: str):
 
 def getIPInformationByMachine(db: Session, machine_id: int):
     device = db.query(Device).filter(Device.id == machine_id).first()
-    ip_adrs = db.query(ip.IP).filter(ip.IP.ip == device.ip_address).first()
+    ip_adrs = db.query(IPAssignment).filter(IPAssignment.ip == device.ip_address).first()
     return {
         "id": ip_adrs.id,
         "ip": ip_adrs.ip,
@@ -38,8 +38,8 @@ def getIPInformationByMachine(db: Session, machine_id: int):
     }
 
 def getIPInformationByIPRange(db: Session, ip_range_id: int):
-    ips = db.query(ip.IP).filter(ip.IP.range_id == ip_range_id).all()
-    ip_count = db.query(ip.IP).filter(ip.IP.range_id == ip_range_id).count()
+    ips = db.query(IPAssignment).filter(IPAssignment.range_id == ip_range_id).all()
+    ip_count = db.query(IPAssignment).filter(IPAssignment.range_id == ip_range_id).count()
     ipss = [
         {
         "id": ip_adrs.id,
@@ -55,7 +55,7 @@ def getIPInformationByIPRange(db: Session, ip_range_id: int):
     }
 
 def create_range(db: Session, dc_id: int, cidr: str):
-    subnet = db.query(ip.ip_range).filter(ip.ip_range.cidr == cidr).first()
+    subnet = db.query(IPRange).filter(IPRange.cidr == cidr).first()
     if subnet:# if subnet already exists
         return {
             "message": f"Subnet {cidr} already exists.",
@@ -63,7 +63,7 @@ def create_range(db: Session, dc_id: int, cidr: str):
             "cidr":subnet.cidr
         }
     else:#if subnet does not exists
-        new_subnet = ip.ip_range(dc_id=dc_id, cidr=cidr)
+        new_subnet = IPRange(dc_id=dc_id, cidr=cidr)
         db.add(new_subnet)
         db.commit()
         return {
@@ -74,7 +74,7 @@ def create_range(db: Session, dc_id: int, cidr: str):
 
 def svc_allocate(db: Session, range_id: int, device_id: int):
     device = db.query(Device).filter(device.id == device_id).first()
-    ip_range = db.query(ip.ip_range).filter(ip.ip_range.id == range_id).first()
+    ip_range = db.query(IPRange).filter(IPRange.id == range_id).first()
     if not ip_range:
         raise HTTPException(status_code=404, detail=f"IP range with ID {range_id} does not exist, please create the IP range first.")
         #return {
@@ -101,7 +101,7 @@ def svc_allocate(db: Session, range_id: int, device_id: int):
             #if no ip in database that is not assigned
             #add another ip that is not in database and in range
             network = ipaddress.ip_network(ip_range.cidr)
-            existing_ip = db.query(ip.IP).filter(ip.IP.range_id == range_id).filter(ip.IP.released is not None).first()
+            existing_ip = db.query(IPAssignment).filter(IPAssignment.range_id == range_id).filter(IPAssignment.released is not None).first()
             if existing_ip:#there are ips within ip_range available in database, released is not none means it's been released and is available
                 existing_ip.assigned = str(datetime.now())
                 existing_ip.released = None # if released is none, it's assigned
@@ -116,11 +116,11 @@ def svc_allocate(db: Session, range_id: int, device_id: int):
                     "released": existing_ip.released
                 }
             else:#add another ip that is not in database and in ip_range
-                existing_ips = {ip.ip for ip in db.query(ip.IP).filter(ip.IP.range_id == range_id).all()}
+                existing_ips = {ip.ip for ip in db.query(IPAssignment).filter(IPAssignment.range_id == range_id).all()}
                 for candidate_ip in network.hosts():
                     if ip_str not in existing_ips:
                         ip_str = str(candidate_ip)
-                        new_ip = ip.IP(
+                        new_ip = IPAssignment(
                             ip=ip_str,
                             range_id=range_id,
                             assigned=str(datetime.now()),
@@ -158,7 +158,7 @@ def svc_allocate(db: Session, range_id: int, device_id: int):
         
 
 def svc_release(db: Session, ip_address: str):
-    ip_adrs = db.query(ip.IP).filter(ip.IP.ip == ip_address).first()
+    ip_adrs = db.query(IPAssignment).filter(IPAssignment.ip == ip_address).first()
     if not ip_adrs:
         raise HTTPException(status_code=404, detail="IP not found")
     device = db.query(Device).filter(Device.ip_address == ip_address).first()

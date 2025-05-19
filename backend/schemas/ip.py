@@ -41,23 +41,3 @@ class IPListResponse(BaseModel):
     count: int
     ips: List[IPInfoResponse]
     
-
-class IP(DCBase):
-    __tablename__ = "ip_assignments"
-
-    id = Column(Integer, primary_key=True, index=True)
-    ip = Column(String, unique=True, index=True, nullable=False)
-    range_id = Column(String, nullable=False)
-    assigned = Column(DateTime, default=datetime.now())
-    released = Column(DateTime, default=datetime.now())
-    #=====
-    #status = Column(String, default="available")
-    #assigned_to = Column(String, nullable=True)
-    #service = Column(String, nullable=True) 
-
-class ip_range(DCBase):
-    __tablename__ = "ip_ranges"
-
-    id = Column(Integer, primary_key=True, index=True)
-    dc_id =  Column(Integer, nullable=False)
-    cidr = Column(String, unique=True, index=True, nullable=False)
