@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api", tags=["racks"])
 @router.post("/rooms/{room_id}/racks", response_model=RackResponse)
 def create_rack(room_id: int, rack: RackCreate, db: Session = Depends(get_dc_db)):
     db_rk = rack_controller.create_rack(db, room_id, rack)
-    return {"status": "success", "id": db_rk.id, "name": db_rk.name}
+    return {"status": "success", "id": db_rk.id, "name": db_rk.name, "total_units": db_rk.total_units, "used_units" : db_rk.used_units}
 
 @router.delete("/racks/{rack_id}", response_model=Msg)
 def delete_rack(rack_id: int, db: Session = Depends(get_dc_db)):

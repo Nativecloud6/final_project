@@ -13,6 +13,11 @@ class RackResponse(BaseModel):
     status: str
     id: int
     name: str
+    total_units: int
+    used_units: int
+
+    class Config:
+        from_attributes = True
 
 class RackDetail(BaseModel):
     id: int

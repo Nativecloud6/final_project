@@ -9,6 +9,7 @@ def create_rack(db: Session, room_id: int, rack: RackCreate):
     db_rack = datacenter.Rack(
         name=rack.name,
         total_units=rack.total_units,
+        used_units  = 0,
         room_id=room_id
     )
     db.add(db_rack)
