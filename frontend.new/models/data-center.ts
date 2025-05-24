@@ -1,14 +1,3 @@
-// User model
-export interface User {
-  id: number
-  username: string
-  passwordHash: string
-  userLevel: string
-  token: string | null
-}
-
-
-
 // Data center model
 export interface DataCenter {
   id: string
@@ -46,16 +35,16 @@ export interface Unit {
 export interface Device {
   id: string
   name: string
-  model: string
-  size: number // Units occupied by the device
-  ips: IPAddress[] // Multiple IPs can be assigned to a device
-  status: "Active" | "Inactive" | "Maintenance" | "Decommissioned"
-  serviceId: string | null // Service this device belongs to
-  serviceName: string | null // Service name
-  installationDate: string | null // When the device was installed
-  lastUpdated: string | null // Last status update
-  notes: string | null // Additional notes
-  powerConsumption: number | null // Power consumption in watts
+  type: string
+  size: number
+  description?: string
+  ips?: IPAddress[]
+  status?: "Active" | "Inactive" | "Maintenance" | "Decommissioned"
+  powerConsumption?: number | null
+  installationDate?: string | null
+  serviceId?: string | null
+  serviceName?: string | null
+  model?: string
 }
 
 // IP Address model
@@ -63,13 +52,13 @@ export interface IPAddress {
   id: string
   address: string
   subnet: string
-  gateway: string | null
+  gateway?: string
   status: "Assigned" | "Available" | "Reserved" | "Deprecated"
   deviceId: string | null
   deviceName: string | null
   serviceId: string | null
   serviceName: string | null
-  lastUpdated: string | null
+  lastUpdated?: string
 }
 
 // IP Subnet model
@@ -81,6 +70,7 @@ export interface IPSubnet {
   usedIPs: number
   availableIPs: number
   reservedIPs: number
+  serviceId?: string | null
 }
 
 // Service model
@@ -88,16 +78,12 @@ export interface Service {
   id: string
   name: string
   description: string
-  devices: string[] // Device IDs
-  ips: string[] // IP IDs
   status: "Active" | "Inactive" | "Maintenance" | "Planned"
-  owner: string | null
-  department: string | null
   criticality: "Low" | "Medium" | "High" | "Critical"
+  owner?: string
+  department?: string
+  devices: string[]
 }
-
-
-
 
 // Mock data for data centers
 export const dataCenters: DataCenter[] = [

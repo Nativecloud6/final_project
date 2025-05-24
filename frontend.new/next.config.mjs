@@ -1,4 +1,3 @@
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
@@ -11,9 +10,10 @@ const nextConfig = {
     unoptimized: true,
   },
   experimental: {
+    forceSwcTransforms: true,
     allowedDevOrigins: [
-      "http://www.hihieverysunday.com", // for HTTP
-      "https://www.hihieverysunday.com", // also allow HTTPS if needed
+      "http://www.hihieverysunday.com",
+      "https://www.hihieverysunday.com",
     ],
   },
   webpack: (config, { dev, isServer }) => {
@@ -21,6 +21,7 @@ const nextConfig = {
       config.watchOptions = {
         poll: 1000,
         aggregateTimeout: 300,
+        ignored: ['**/node_modules/**', '**/.next/**'], // 🔧 忽略編譯 node_modules 和 .next
       };
     }
     return config;
