@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect } from "react"
 import type React from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 import {
   ChevronDown,
   Globe,
@@ -48,50 +47,6 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname()
-  const router = useRouter()
-
-  // Read cookies
-  useEffect(() => {
-    const cookies = document.cookie.split(";").reduce((acc: any, cookieStr) => {
-      const [key, value] = cookieStr.trim().split("=")
-      acc[key] = decodeURIComponent(value)
-      return acc
-    }, {})
-
-    const token = cookies.token
-    const userLevel = cookies.userLevel
-
-    if (!token) {
-      router.push("/")
-      return
-    }
-
-    if (userLevel !== "admin" && pathname.startsWith("/dashboard")) {
-      switchToUserMode()
-    }
-  }, [pathname])
-
-  // 切換為 user mode 的功能
-  const switchToUserMode = () => {
-    let userPath = "/user-dashboard"
-    if (pathname.includes("/dashboard/")) {
-      const subPath = pathname.split("/dashboard/")[1]
-      if (subPath === "rack-management") {
-        userPath = "/user-dashboard/devices"
-      } else if (subPath === "device-management") {
-        userPath = "/user-dashboard/devices"
-      } else if (subPath === "ip-management") {
-        userPath = "/user-dashboard/ip-lookup"
-      } else if (subPath === "service-management") {
-        userPath = "/user-dashboard/services"
-      } else if (subPath === "search") {
-        userPath = "/user-dashboard/search"
-      } else if (subPath === "account-settings") {
-        userPath = "/user-dashboard/account-settings"
-      }
-    }
-    router.push(userPath)
-  }
 
   const navItems = [
     {
@@ -216,10 +171,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={switchToUserMode}>
-                    <UserCog className="mr-2 h-4 w-4" />
-                    Switch to User Mode
-                  </DropdownMenuItem>
+                  {/* Switch to user mode removed */}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link href="/">

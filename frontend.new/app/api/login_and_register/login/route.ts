@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { openDB } from "@/lib/db"
 import { randomUUID } from "crypto"
+import bcrypt from "bcrypt"
 
 export const dynamic = "force-dynamic"
 
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ code: "user-not-exist" })
   }
 
-  if (user.passwordHash !== password) {
+  if (!await bcrypt.compare(password, user.passwordHash)) {
     return NextResponse.json({ code: "password-wrong" })
   }
 
@@ -29,7 +30,9 @@ export async function POST(request: NextRequest) {
     await db.run("UPDATE users SET token = ? WHERE username = ?", token, username)
   }
 
-  const response = NextResponse.json({ code: "login-success" })
+  const redirectTo = user.userLevel === "admin" ? "/dashboard" : "/user-dashboard"
+  const response = NextResponse.json({ code: "login-success", redirectTo })
+
 
   // 設定 cookies：username, uuid, token
   response.cookies.set("username", username)

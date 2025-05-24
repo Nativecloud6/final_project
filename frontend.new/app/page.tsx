@@ -25,7 +25,7 @@ export function LoginForm() {
         break
       case "login-success":
         alert("Login successful. Redirecting...")
-        router.push("/dashboard")
+        router.push(data.redirectTo)
         break
       default:
         alert("Unexpected login error.")
