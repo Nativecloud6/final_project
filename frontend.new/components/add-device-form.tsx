@@ -30,11 +30,16 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
   const [deviceStatus, setDeviceStatus] = useState<"Active" | "Inactive" | "Maintenance" | "Decommissioned">("Active")
   const [deviceDescription, setDeviceDescription] = useState("")
   const [ipAddresses, setIpAddresses] = useState([{ address: "", type: "Management" }])
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [selectedService, setSelectedService] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const dataStore = useDataCenterStore()
-  const services = dataStore.getAllServices ? dataStore.getAllServices() : []
+
+  // Get all services for dropdown
+  const services = dataStore.getAllServices()
+  const activeServices = services
+    .filter((service) => service.status === "Active")
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   // 處理IP地址變更
   const handleIpChange = (index: number, field: string, value: string) => {
@@ -106,6 +111,9 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
         }
       }
 
+      // Get service name if a service is selected
+      const serviceName = selectedService ? dataStore.getService(selectedService)?.name || null : null
+
       // 創建設備對象
       const deviceInfo = {
         id: `dev-${Date.now()}`,
@@ -117,8 +125,22 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
         description: deviceDescription,
         installationDate: new Date().toISOString(),
         serviceId: selectedService,
-        serviceName: selectedService ? services.find((s) => s.id === selectedService)?.name || null : null,
-        ips: ipAddresses.filter((ip) => ip.address.trim() !== "").map((ip) => ({ address: ip.address, type: ip.type })),
+        serviceName: serviceName,
+        ips: ipAddresses
+          .filter((ip) => ip.address.trim() !== "")
+          .map((ip) => ({
+            id: `ip-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            address: ip.address,
+            type: ip.type,
+            subnet: "192.168.1.0/24",
+            gateway: "192.168.1.1",
+            status: "Assigned" as const,
+            deviceId: `dev-${Date.now()}`,
+            deviceName: deviceName,
+            serviceId: selectedService,
+            serviceName: serviceName,
+            lastUpdated: new Date().toISOString().split("T")[0],
+          })),
       }
 
       // 使用傳入的數據中心、房間和機櫃ID，如果沒有傳入，則使用從機櫃中獲取的信息
@@ -133,7 +155,7 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
       // 安裝設備
       dataStore.addDevice(dcId, rmId, rkId, position, deviceInfo)
 
-      // 如果選擇了服務，將設備添加到服務中
+      // 如果設備有關聯的服務，將設備添加到服務
       if (selectedService) {
         dataStore.assignDeviceToService(deviceInfo.id, selectedService)
       }
@@ -151,8 +173,8 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
       setDeviceModel("")
       setDeviceStatus("Active")
       setDeviceDescription("")
-      setIpAddresses([{ address: "", type: "Management" }])
       setSelectedService(null)
+      setIpAddresses([{ address: "", type: "Management" }])
 
       // 調用成功回調
       if (onSuccess) {
@@ -251,24 +273,33 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label className="block text-sm font-medium mb-1">Associated Service</Label>
-        <Select
-          value={selectedService || ""}
-          onValueChange={(value) => setSelectedService(value === "" ? null : value)}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select a service (optional)" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">None</SelectItem>
-            {services.map((service) => (
-              <SelectItem key={service.id} value={service.id}>
-                {service.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label className="block text-sm font-medium mb-1">Service</Label>
+          <Select
+            value={selectedService || ""}
+            onValueChange={(value) => setSelectedService(value === "" || value === "none" ? null : value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select a service (optional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              {activeServices.length > 0 ? (
+                activeServices.map((service) => (
+                  <SelectItem key={service.id} value={service.id}>
+                    {service.name} ({service.department || "No Department"})
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="" disabled>
+                  No services available
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>{/* Empty space to maintain grid layout */}</div>
       </div>
 
       <div>

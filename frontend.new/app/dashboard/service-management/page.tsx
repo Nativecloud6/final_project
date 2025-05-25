@@ -12,8 +12,9 @@ import { ServiceActionModal } from "@/components/service-action-modal"
 import { useDataCenterStore } from "@/lib/data-center-store"
 
 export default function ServiceManagement() {
-  const { getAllServices } = useDataCenterStore()
+  const { getAllServices, getAllDevices } = useDataCenterStore()
   const services = getAllServices()
+  const allDevices = getAllDevices()
 
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedService, setSelectedService] = useState<string | null>(null)
@@ -31,9 +32,18 @@ export default function ServiceManagement() {
       service.department?.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
+  // Get device count for a service
+  const getDeviceCount = (serviceId: string) => {
+    return allDevices.filter((device) => device.serviceId === serviceId).length
+  }
+
   const handleServiceClick = (serviceId: string) => {
     setSelectedService(serviceId)
     setIsDetailModalOpen(true)
+  }
+
+  const handleDeviceCountClick = (serviceId: string) => {
+    alert(`Service has ${getDeviceCount(serviceId)} devices`)
   }
 
   const handleAddService = () => {
@@ -145,7 +155,15 @@ export default function ServiceManagement() {
                           {service.criticality}
                         </Badge>
                       </TableCell>
-                      <TableCell>{service.devices.length}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          className="h-auto p-0 font-normal text-blue-400 hover:text-blue-300"
+                          onClick={() => handleDeviceCountClick(service.id)}
+                        >
+                          {getDeviceCount(service.id)}
+                        </Button>
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button variant="ghost" size="sm" onClick={() => handleServiceClick(service.id)}>
