@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -22,10 +22,13 @@ interface AddDeviceFormProps {
 }
 
 export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }: AddDeviceFormProps) {
+  // Added refreshKey state
+  const [refreshKey, setRefreshKey] = useState(0)
   const [deviceName, setDeviceName] = useState("")
   const [deviceType, setDeviceType] = useState("")
   const [deviceSize, setDeviceSize] = useState("1")
-  const [startPosition, setStartPosition] = useState("1")
+  // Changed startPosition initial value to empty string
+  const [startPosition, setStartPosition] = useState("")
   const [deviceModel, setDeviceModel] = useState("")
   const [deviceStatus, setDeviceStatus] = useState<"Active" | "Inactive" | "Maintenance" | "Decommissioned">("Active")
   const [deviceDescription, setDeviceDescription] = useState("")
@@ -81,9 +84,44 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
     return availablePositions
   }
 
-  // 處理表單提交
+  // Added resetForm function
+  const resetForm = () => {
+    setDeviceName("")
+    setDeviceType("")
+    setDeviceSize("1")
+    setStartPosition("")
+    setDeviceModel("")
+    setDeviceStatus("Active")
+    setDeviceDescription("")
+    setSelectedService(null)
+    setIpAddresses([{ address: "", type: "Management" }])
+    setIsSubmitting(false)
+    setRefreshKey((prev) => prev + 1)
+  }
+
+  // Added useEffect for rack changes
+  useEffect(() => {
+    setStartPosition("")
+    setRefreshKey((prev) => prev + 1)
+  }, [rack.id, deviceSize])
+
+  // Added useEffect for store subscription
+  useEffect(() => {
+    const unsubscribe = useDataCenterStore.subscribe(() => {
+      setRefreshKey((prev) => prev + 1)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  // Updated handleSubmit with additional logging and error handling
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (isSubmitting) {
+      console.log("Already submitting, ignoring...")
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
@@ -152,6 +190,8 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
         throw new Error("Data center or room information not found")
       }
 
+      console.log("Installing device:", deviceInfo)
+
       // 安裝設備
       dataStore.addDevice(dcId, rmId, rkId, position, deviceInfo)
 
@@ -165,22 +205,15 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
         description: "Device has been installed successfully",
       })
 
-      // 重置表單
-      setDeviceName("")
-      setDeviceType("")
-      setDeviceSize("1")
-      setStartPosition("1")
-      setDeviceModel("")
-      setDeviceStatus("Active")
-      setDeviceDescription("")
-      setSelectedService(null)
-      setIpAddresses([{ address: "", type: "Management" }])
+      // Use resetForm instead of individual state updates
+      resetForm()
 
       // 調用成功回調
       if (onSuccess) {
         onSuccess()
       }
     } catch (error) {
+      console.error("Error installing device:", error)
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to install device",
@@ -193,16 +226,18 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
 
   const availableStartPositions = getAvailableStartPositions()
 
+  // Updated form JSX with disabled states and required field indicators
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <Label className="block text-sm font-medium mb-1">Device Name</Label>
+          <Label className="block text-sm font-medium mb-1">Device Name *</Label>
           <Input
             value={deviceName}
             onChange={(e) => setDeviceName(e.target.value)}
             placeholder="Enter device name"
             required
+            disabled={isSubmitting}
           />
         </div>
         <div>
@@ -212,6 +247,7 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
             onChange={(e) => setDeviceType(e.target.value)}
             placeholder="Server, Switch, Router, etc."
             required
+            disabled={isSubmitting}
           />
         </div>
       </div>
@@ -227,11 +263,12 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
             onChange={(e) => setDeviceSize(e.target.value)}
             placeholder="Size in rack units"
             required
+            disabled={isSubmitting}
           />
         </div>
         <div>
           <Label className="block text-sm font-medium mb-1">Start Position (U)</Label>
-          <Select value={startPosition} onValueChange={setStartPosition}>
+          <Select value={startPosition} onValueChange={setStartPosition} disabled={isSubmitting}>
             <SelectTrigger>
               <SelectValue placeholder="Select start position" />
             </SelectTrigger>
@@ -252,13 +289,19 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <Label className="block text-sm font-medium mb-1">Model</Label>
-          <Input value={deviceModel} onChange={(e) => setDeviceModel(e.target.value)} placeholder="Device model" />
+          <Input
+            value={deviceModel}
+            onChange={(e) => setDeviceModel(e.target.value)}
+            placeholder="Device model"
+            disabled={isSubmitting}
+          />
         </div>
         <div>
           <Label className="block text-sm font-medium mb-1">Status</Label>
           <Select
             value={deviceStatus}
             onValueChange={(value: "Active" | "Inactive" | "Maintenance" | "Decommissioned") => setDeviceStatus(value)}
+            disabled={isSubmitting}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select status" />
@@ -279,6 +322,7 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
           <Select
             value={selectedService || ""}
             onValueChange={(value) => setSelectedService(value === "" || value === "none" ? null : value)}
+            disabled={isSubmitting}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select a service (optional)" />
@@ -309,6 +353,7 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
           onChange={(e) => setDeviceDescription(e.target.value)}
           placeholder="Device description"
           rows={3}
+          disabled={isSubmitting}
         />
       </div>
 
@@ -321,8 +366,9 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
               onChange={(e) => handleIpChange(index, "address", e.target.value)}
               placeholder="IP Address"
               className="flex-1"
+              disabled={isSubmitting}
             />
-            <Select value={ip.type} onValueChange={(value) => handleIpChange(index, "type", value)}>
+            <Select value={ip.type} onValueChange={(value) => handleIpChange(index, "type", value)} disabled={isSubmitting}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
@@ -332,18 +378,27 @@ export function AddDeviceForm({ rack, onSuccess, dataCenterId, roomId, rackId }:
                 <SelectItem value="Backup">Backup</SelectItem>
               </SelectContent>
             </Select>
-            <Button type="button" variant="outline" size="icon" onClick={() => removeIpAddress(index)}>
+            <Button type="button" variant="outline" size="icon" onClick={() => removeIpAddress(index)} disabled={isSubmitting}>
               <X className="h-4 w-4" />
             </Button>
           </div>
         ))}
-        <Button type="button" variant="outline" size="sm" onClick={addIpAddress} className="mt-2">
+        <Button type="button" variant="outline" size="sm" onClick={addIpAddress} className="mt-2" disabled={isSubmitting}>
           <Plus className="h-4 w-4 mr-2" /> Add IP Address
         </Button>
       </div>
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={isSubmitting || availableStartPositions.length === 0}>
+        <Button
+          type="submit"
+          disabled={
+            isSubmitting ||
+            availableStartPositions.length === 0 ||
+            !deviceName ||
+            !deviceType ||
+            !startPosition
+          }
+        >
           {isSubmitting ? "Installing..." : "Install Device"}
         </Button>
       </div>
