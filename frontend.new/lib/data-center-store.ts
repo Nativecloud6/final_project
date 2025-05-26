@@ -329,7 +329,7 @@ export const useDataCenterStore = create<DataCenterStore>()(
         setDataCenters: (dataCenters) => set({ dataCenters }),
 
         addDataCenter: (name) => {
-          const id = `dc-${Date.now()}`
+          const id = `dc-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
           set((state) => ({
             dataCenters: [...state.dataCenters, { id, name, rooms: [] }],
           }))
@@ -349,7 +349,7 @@ export const useDataCenterStore = create<DataCenterStore>()(
         },
 
         addRoom: (dataCenterId, name) => {
-          const id = `room-${Date.now()}`
+          const id = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
           set((state) => ({
             dataCenters: state.dataCenters.map((dc) =>
               dc.id === dataCenterId ? { ...dc, rooms: [...dc.rooms, { id, name, racks: [] }] } : dc,
@@ -380,7 +380,7 @@ export const useDataCenterStore = create<DataCenterStore>()(
         },
 
         addRack: (dataCenterId, roomId, name, totalUnits) => {
-          const id = `rack-${Date.now()}`
+          const id = `rack-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
           set((state) => ({
             dataCenters: state.dataCenters.map((dc) =>
               dc.id === dataCenterId
@@ -463,7 +463,7 @@ export const useDataCenterStore = create<DataCenterStore>()(
           startPosition: number,
           deviceInfo: DeviceInfo,
         ) => {
-          const deviceId = deviceInfo.id || `dev-${Date.now()}`
+          const deviceId = deviceInfo.id || `dev-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
           const deviceWithId = { ...deviceInfo, id: deviceId }
 
           // 存儲設備信息
