@@ -1,40 +1,45 @@
+// middleware.ts
 import { NextRequest, NextResponse } from "next/server"
 
 export const config = {
-  matcher: ["/((?!api|_next|static|_next/image|favicon.ico).*)"], // 所有非 API 路由都走 middleware
+  matcher: ["/((?!api|_next|static|_next/image|favicon.ico).*)"],
 }
 
-export async function middleware(request: NextRequest) {
-  const token = request.cookies.get("token")?.value
-  const pathname = request.nextUrl.pathname
+export async function middleware(req: NextRequest) {
+  const { pathname, origin } = req.nextUrl
+  const token = req.cookies.get("token")?.value
 
-  // 未登入者禁止進入非首頁
+  // 1️⃣ Not logged in → back to /?code=login-required
   if (!token && pathname !== "/") {
-    return NextResponse.redirect(new URL("/", request.url))
+    const url = new URL("/", origin)
+    url.searchParams.set("code", "login-required")
+    return NextResponse.redirect(url)
   }
 
-  // 從後端驗證 token 並獲得 userLevel
-  let userLevel = null
+  // 2️⃣ Validate the token
+  let userLevel: string | null = null
   if (token) {
-    const res = await fetch(`${request.nextUrl.origin}/api/auth/validate`, {
+    const res = await fetch(`${origin}/api/auth/validate`, {
       method: "POST",
-      body: JSON.stringify({ token }),
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
     })
     const data = await res.json()
     if (data.valid) userLevel = data.userLevel
   }
 
-  // ✅ 使用者誤進 admin 的子頁面，導向 user 的對應頁面
+  // 3️⃣ A normal user tried to hit /dashboard → back to /?code=no-permission
   if (userLevel !== "admin" && pathname.startsWith("/dashboard")) {
-    const newPath = pathname.replace("/dashboard", "/user-dashboard")
-    return NextResponse.redirect(new URL(newPath, request.url))
+    const url = new URL("/", origin)
+    url.searchParams.set("code", "no-permission")
+    return NextResponse.redirect(url)
   }
 
-  // ✅ 管理員誤進 user 的子頁面，導向 admin 的對應頁面
-  if (userLevel === "admin" && pathname.startsWith("/user-dashboard")) {
-    const newPath = pathname.replace("/user-dashboard", "/dashboard")
-    return NextResponse.redirect(new URL(newPath, request.url))
+  // 4️⃣ An admin tried to hit /user-dashboard → back to /?code=no-permission
+  if (userLevel !== "user" && pathname.startsWith("/user-dashboard")) {
+    const url = new URL("/", origin)
+    url.searchParams.set("code", "no-permission")
+    return NextResponse.redirect(url)
   }
 
   return NextResponse.next()

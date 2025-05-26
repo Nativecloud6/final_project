@@ -12,10 +12,10 @@ import {
   Search,
   Server,
   Settings,
-  UserCog,
   ServerCrash,
 } from "lucide-react"
 
+import { useEffect, useState } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -50,29 +50,20 @@ export function UserDashboardLayout({ children }: UserDashboardLayoutProps) {
   const pathname = usePathname()
   const router = useRouter()
 
-  const switchToAdminMode = () => {
-    // 將當前路徑轉換為管理員路徑
-    let adminPath = "/dashboard"
-    if (pathname.includes("/user-dashboard/")) {
-      const subPath = pathname.split("/user-dashboard/")[1]
-      if (subPath === "device-management") {
-        adminPath = "/dashboard/device-management"
-      } else if (subPath === "ip-management") {
-        adminPath = "/dashboard/ip-management"
-      } else if (subPath === "service-management") {
-        adminPath = "/dashboard/service-management"
-      } else if (subPath === "rack-management") {
-        adminPath = "/dashboard/rack-management"
-      } else if (subPath === "search") {
-        adminPath = "/dashboard/search"
-      } else if (subPath === "account-settings") {
-        adminPath = "/dashboard/account-settings"
-      }
-    }
-    router.push(adminPath)
-  }
+  const [username, setUsername] = useState("User")
 
-  // 更新導航項目，添加機櫃管理、設備管理和IP管理
+  useEffect(() => {
+    const cookies = document.cookie.split(";").reduce((acc: any, cookieStr) => {
+      const [key, value] = cookieStr.trim().split("=")
+      acc[key] = decodeURIComponent(value)
+      return acc
+    }, {})
+
+    if (cookies.username) {
+      setUsername(cookies.username)
+    }
+  }, [])
+
   const navItems = [
     {
       title: "Dashboard",
@@ -179,7 +170,7 @@ export function UserDashboardLayout({ children }: UserDashboardLayoutProps) {
             <SidebarTrigger />
             <div className="font-semibold">Data Center Management System - User Mode</div>
             <Badge variant="outline" className="ml-2 bg-blue-900/20 text-blue-300 border-blue-800">
-              General User
+              {username}
             </Badge>
             <div className="ml-auto flex items-center gap-4">
               <NotificationDropdown />
@@ -188,10 +179,10 @@ export function UserDashboardLayout({ children }: UserDashboardLayoutProps) {
                   <Button variant="ghost" size="sm" className="gap-2">
                     <Avatar className="h-8 w-8">
                       <AvatarImage src="/placeholder.svg" alt="User" />
-                      <AvatarFallback>GU</AvatarFallback>
+                      <AvatarFallback>{username.charAt(0).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <div className="flex items-center gap-1 text-sm font-medium">
-                      General User
+                      {username}
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </Button>
@@ -204,16 +195,17 @@ export function UserDashboardLayout({ children }: UserDashboardLayoutProps) {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={switchToAdminMode}>
-                    <UserCog className="mr-2 h-4 w-4" />
-                    Switch to Admin Mode
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href="/">
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Logout
-                    </Link>
+                  <DropdownMenuItem onClick={() => {
+                    // Clear cookies
+                    document.cookie = "token=; Max-Age=0; path=/"
+                    document.cookie = "uuid=; Max-Age=0; path=/"
+                    document.cookie = "username=; Max-Age=0; path=/"
+
+                    // Redirect to home
+                    router.push("/")
+                  }}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Logout
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

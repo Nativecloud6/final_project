@@ -13,9 +13,9 @@ import {
   Search,
   Server,
   Settings,
-  UserCog,
 } from "lucide-react"
 
+import { useEffect, useState } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -47,6 +47,19 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname()
+  const [username, setUsername] = useState("Admin")
+
+  useEffect(() => {
+    const cookies = document.cookie.split(";").reduce((acc: any, cookieStr) => {
+      const [key, value] = cookieStr.trim().split("=")
+      acc[key] = decodeURIComponent(value)
+      return acc
+    }, {})
+
+    if (cookies.username) {
+      setUsername(cookies.username)
+    }
+  }, [])
 
   const navItems = [
     {
@@ -155,10 +168,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   <Button variant="ghost" size="sm" className="gap-2">
                     <Avatar className="h-8 w-8">
                       <AvatarImage src="/placeholder.svg" alt="User" />
-                      <AvatarFallback>AD</AvatarFallback>
+                      <AvatarFallback>{username.charAt(0).toUpperCase()}</AvatarFallback>
                     </Avatar>
                     <div className="flex items-center gap-1 text-sm font-medium">
-                      Admin User
+                      {username}
                       <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </Button>
@@ -170,8 +183,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                       Account Settings
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  {/* Switch to user mode removed */}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link href="/">

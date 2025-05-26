@@ -18,6 +18,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
 import { useDataCenterStore } from "@/lib/data-center-store"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Upload, Download, FileText, AlertCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface DeviceActionModalProps {
   isOpen: boolean
@@ -58,8 +63,19 @@ export function DeviceActionModal({ isOpen, onClose, actionType, deviceId }: Dev
   const [startUnit, setStartUnit] = useState("")
   const [endUnit, setEndUnit] = useState("")
 
+  // Batch import related states
+  const [activeTab, setActiveTab] = useState("single")
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [csvData, setCsvData] = useState<any[]>([])
+  const [csvErrors, setCsvErrors] = useState<string[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+
   // Get all services for dropdown
   const services = getAllServices()
+  const activeServices = services
+    .filter((service) => service.status === "Active")
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   // Reset form when modal opens
   useEffect(() => {
@@ -102,6 +118,267 @@ export function DeviceActionModal({ isOpen, onClose, actionType, deviceId }: Dev
     setSelectedRack("")
     setStartUnit("")
     setEndUnit("")
+
+    // Reset batch import states
+    setActiveTab("single")
+    setCsvFile(null)
+    setCsvData([])
+    setCsvErrors([])
+    setIsUploading(false)
+    setDragActive(false)
+  }
+
+  // CSV template download
+  const downloadCSVTemplate = () => {
+    const template = `Device Name,Model,Device Type,Device Size (U),Location,Status,Service,Description,IP Address,Management Type
+Server-001,Dell R740,Server,2,DC-A Room 1 Rack 2,Active,Web Service,Web Server,192.168.1.100,Management
+Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.101,Management`
+
+    const blob = new Blob([template], { type: "text/csv" })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "device_import_template.csv"
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
+  // Handle CSV file upload
+  const handleCSVUpload = async (file: File) => {
+    setIsUploading(true)
+    setCsvErrors([])
+
+    try {
+      const text = await file.text()
+      const lines = text.split("\n").filter((line) => line.trim())
+      const headers = lines[0].split(",").map((h) => h.trim())
+
+      const expectedHeaders = [
+        "Device Name",
+        "Model",
+        "Device Type",
+        "Device Size (U)",
+        "Location",
+        "Status",
+        "Service",
+        "Description",
+        "IP Address",
+        "Management Type",
+      ]
+
+      // Check headers
+      const missingHeaders = expectedHeaders.filter((h) => !headers.includes(h))
+      if (missingHeaders.length > 0) {
+        setCsvErrors([`Missing required columns: ${missingHeaders.join(", ")}`])
+        setIsUploading(false)
+        return
+      }
+
+      const data = []
+      const errors = []
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(",").map((v) => v.trim())
+        const row: any = {}
+
+        headers.forEach((header, index) => {
+          row[header] = values[index] || ""
+        })
+
+        // Validate required fields
+        if (!row["Device Name"]) {
+          errors.push(`Row ${i + 1}: Device Name cannot be empty`)
+        }
+        if (!row["Model"]) {
+          errors.push(`Row ${i + 1}: Model cannot be empty`)
+        }
+        if (!row["Device Type"]) {
+          errors.push(`Row ${i + 1}: Device Type cannot be empty`)
+        }
+        if (!row["Device Size (U)"] || isNaN(Number(row["Device Size (U)"]))) {
+          errors.push(`Row ${i + 1}: Device Size must be a number`)
+        }
+
+        // Validate Service if provided
+        if (row["Service"] && row["Service"].trim() !== "") {
+          const serviceName = row["Service"].trim()
+          const foundService = services.find((s) => s.name === serviceName)
+          if (!foundService) {
+            // Find similar service names for suggestions
+            const suggestions = services
+              .filter((s) => s.name.toLowerCase().includes(serviceName.toLowerCase()))
+              .map((s) => s.name)
+              .slice(0, 3)
+
+            let errorMsg = `Row ${i + 1}: Service - Cannot find service '${serviceName}'`
+            if (suggestions.length > 0) {
+              errorMsg += `. Did you mean: ${suggestions.join(", ")}?`
+            }
+            errors.push(errorMsg)
+          }
+        }
+
+        // Validate IP address format
+        if (row["IP Address"]) {
+          const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/
+          if (!ipRegex.test(row["IP Address"])) {
+            errors.push(`Row ${i + 1}: Invalid IP address format`)
+          }
+        }
+
+        row.rowIndex = i + 1
+        row.hasError = errors.some((error) => error.includes(`Row ${i + 1}`))
+        data.push(row)
+      }
+
+      setCsvData(data)
+      setCsvErrors(errors)
+      setCsvFile(file)
+    } catch (error) {
+      setCsvErrors(["Failed to read file. Please check the file format."])
+    }
+
+    setIsUploading(false)
+  }
+
+  // Handle drag and drop
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true)
+    } else if (e.type === "dragleave") {
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0]
+      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
+        handleCSVUpload(file)
+      } else {
+        setCsvErrors(["Please upload a CSV file"])
+      }
+    }
+  }
+
+  // Handle batch import
+  const handleBatchImport = async () => {
+    const validData = csvData.filter((row) => !row.hasError)
+
+    try {
+      for (const row of validData) {
+        // Parse location information
+        const locationParts = row["Location"].split(" ")
+        let dcName = "",
+          roomName = "",
+          rackName = ""
+
+        if (locationParts.length >= 3) {
+          dcName = locationParts[0]
+          roomName = locationParts[1] + " " + locationParts[2]
+          rackName = locationParts[3] + " " + locationParts[4]
+        }
+
+        // Find corresponding data center, room and rack
+        const dc = dataCenters.find((d) => d.name === dcName)
+        if (!dc) continue
+
+        const room = dc.rooms.find((r) => r.name === roomName)
+        if (!room) continue
+
+        const rack = room.racks.find((r) => r.name === rackName)
+        if (!rack) continue
+
+        // Find service if specified
+        let serviceId = null
+        let serviceName = null
+        if (row["Service"] && row["Service"].trim() !== "") {
+          const foundService = services.find((s) => s.name === row["Service"].trim())
+          if (foundService) {
+            serviceId = foundService.id
+            serviceName = foundService.name
+          }
+        }
+
+        // Find available position
+        const deviceSize = Number(row["Device Size (U)"])
+        let availablePosition = null
+
+        for (let i = 1; i <= rack.totalUnits - deviceSize + 1; i++) {
+          let canFit = true
+          for (let j = 0; j < deviceSize; j++) {
+            if (rack.units[i + j - 1].deviceId !== null) {
+              canFit = false
+              break
+            }
+          }
+          if (canFit) {
+            availablePosition = i
+            break
+          }
+        }
+
+        if (!availablePosition) continue
+
+        const newDeviceId = `dev-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+
+        const deviceInfo = {
+          id: newDeviceId,
+          name: row["Device Name"],
+          type: row["Device Type"],
+          size: deviceSize,
+          ips: row["IP Address"]
+            ? [
+                {
+                  id: `ip-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                  address: row["IP Address"],
+                  subnet: "255.255.255.0",
+                  gateway: "192.168.1.1",
+                  status: "Assigned" as const,
+                  deviceId: newDeviceId,
+                  deviceName: row["Device Name"],
+                  serviceId: serviceId,
+                  serviceName: serviceName,
+                  lastUpdated: new Date().toISOString().split("T")[0],
+                },
+              ]
+            : [],
+          status: (row["Status"] || "Active") as "Active" | "Inactive" | "Maintenance" | "Decommissioned",
+          powerConsumption: null,
+          installationDate: new Date().toISOString().split("T")[0],
+          description: row["Description"] || "",
+          model: row["Model"],
+          serviceId: serviceId,
+          serviceName: serviceName,
+        }
+
+        addDevice(dc.id, room.id, rack.id, availablePosition, deviceInfo)
+
+        // Assign device to service if specified
+        if (serviceId) {
+          assignDeviceToService(newDeviceId, serviceId)
+        }
+      }
+
+      toast({
+        title: "Success",
+        description: `Successfully imported ${validData.length} devices`,
+      })
+
+      onClose()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Batch import failed",
+        variant: "destructive",
+      })
+    }
   }
 
   // Get available units for the selected rack
@@ -464,326 +741,617 @@ export function DeviceActionModal({ isOpen, onClose, actionType, deviceId }: Dev
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>{getTitle()}</DialogTitle>
-            <DialogDescription>{getDescription()}</DialogDescription>
-          </DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{getTitle()}</DialogTitle>
+          <DialogDescription>{getDescription()}</DialogDescription>
+        </DialogHeader>
 
-          <div className="mt-4 grid gap-4 py-4">
-            {actionType === "install" && deviceId === "new" && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="deviceName">
-                      Device Name <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="deviceName"
-                      value={deviceName}
-                      onChange={(e) => setDeviceName(e.target.value)}
-                      placeholder="Enter device name"
-                      required
-                    />
+        {actionType === "install" && deviceId === "new" ? (
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="single">Single Device</TabsTrigger>
+              <TabsTrigger value="batch">Batch Import</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="single" className="space-y-4">
+              <form onSubmit={handleSubmit}>
+                <div className="mt-4 grid gap-4 py-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="deviceName">
+                        Device Name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="deviceName"
+                        value={deviceName}
+                        onChange={(e) => setDeviceName(e.target.value)}
+                        placeholder="Enter device name"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="deviceModel">
+                        Device Type <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="deviceModel"
+                        value={deviceModel}
+                        onChange={(e) => setDeviceModel(e.target.value)}
+                        placeholder="e.g. Server, Switch, Router"
+                        required
+                      />
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="deviceModel">
-                      Model/Type <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="deviceModel"
-                      value={deviceModel}
-                      onChange={(e) => setDeviceModel(e.target.value)}
-                      placeholder="e.g. Dell R740"
-                      required
-                    />
-                  </div>
-                </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="deviceSize">
+                        Device Size (U) <span className="text-red-500">*</span>
+                      </Label>
+                      <Select value={deviceSize} onValueChange={setDeviceSize}>
+                        <SelectTrigger id="deviceSize">
+                          <SelectValue placeholder="Select size" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map((size) => (
+                            <SelectItem key={size} value={size.toString()}>
+                              {size}U
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="ipAddress">
-                      IP Address <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="ipAddress"
-                      value={ipAddress}
-                      onChange={(e) => setIpAddress(e.target.value)}
-                      placeholder="e.g. 192.168.1.10"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="subnet">
-                      Subnet <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="subnet"
-                      value={subnet}
-                      onChange={(e) => setSubnet(e.target.value)}
-                      placeholder="e.g. 192.168.1.0/24"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="deviceSize">
-                      Size (U) <span className="text-red-500">*</span>
-                    </Label>
-                    <Select value={deviceSize} onValueChange={setDeviceSize}>
-                      <SelectTrigger id="deviceSize">
-                        <SelectValue placeholder="Select size" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map((size) => (
-                          <SelectItem key={size} value={size.toString()}>
-                            {size}U
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="space-y-2">
+                      <Label htmlFor="startUnit">
+                        Start Position <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={startUnit}
+                        onValueChange={setStartUnit}
+                        disabled={!selectedRack || availableUnits.length === 0}
+                      >
+                        <SelectTrigger id="startUnit">
+                          <SelectValue
+                            placeholder={availableUnits.length === 0 ? "No space available" : "Select position"}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableUnits.map((unit) => (
+                            <SelectItem key={unit} value={unit.toString()}>
+                              U{unit}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedRack && availableUnits.length === 0 && (
+                        <p className="text-xs text-red-500">
+                          No available space in this rack for the selected device size
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="deviceStatus">Status</Label>
-                    <Select value={deviceStatus} onValueChange={setDeviceStatus}>
-                      <SelectTrigger id="deviceStatus">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Active">Active</SelectItem>
-                        <SelectItem value="Inactive">Inactive</SelectItem>
-                        <SelectItem value="Maintenance">Maintenance</SelectItem>
-                        <SelectItem value="Decommissioned">Decommissioned</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="deviceModel">Model</Label>
+                      <Input
+                        id="deviceModel"
+                        value={deviceModel}
+                        onChange={(e) => setDeviceModel(e.target.value)}
+                        placeholder="e.g. Dell R740"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="deviceStatus">Status</Label>
+                      <Select value={deviceStatus} onValueChange={setDeviceStatus}>
+                        <SelectTrigger id="deviceStatus">
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                          <SelectItem value="Maintenance">Maintenance</SelectItem>
+                          <SelectItem value="Decommissioned">Decommissioned</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="devicePower">Power Consumption (W)</Label>
-                    <Input
-                      id="devicePower"
-                      type="number"
-                      min="0"
-                      value={devicePower}
-                      onChange={(e) => setDevicePower(e.target.value)}
-                      placeholder="e.g. 450"
-                    />
-                  </div>
-                </div>
-
-                {/* Service Selection */}
-                <div className="space-y-2">
-                  <Label htmlFor="selectedService">Service</Label>
-                  <Select
-                    value={selectedService || ""}
-                    onValueChange={(value) => setSelectedService(value === "" ? null : value)}
-                  >
-                    <SelectTrigger id="selectedService">
-                      <SelectValue placeholder="Select service (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {services.map((service) => (
-                        <SelectItem key={service.id} value={service.id}>
-                          {service.name} ({service.status})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="deviceNotes">Notes</Label>
-                  <Textarea
-                    id="deviceNotes"
-                    value={deviceNotes}
-                    onChange={(e) => setDeviceNotes(e.target.value)}
-                    placeholder="Additional information about this device"
-                    rows={3}
-                  />
-                </div>
-              </>
-            )}
-
-            {((actionType === "install" && deviceId !== "new") || actionType === "move") && (
-              <>
-                {/* Service Selection for existing device */}
-                <div className="space-y-2">
-                  <Label htmlFor="selectedService">Service</Label>
-                  <Select
-                    value={selectedService || ""}
-                    onValueChange={(value) => setSelectedService(value === "" ? null : value)}
-                  >
-                    <SelectTrigger id="selectedService">
-                      <SelectValue placeholder="Select service (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {services.map((service) => (
-                        <SelectItem key={service.id} value={service.id}>
-                          {service.name} ({service.status})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-
-            {(actionType === "install" || actionType === "move") && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="selectedDc">
-                      Data Center <span className="text-red-500">*</span>
-                    </Label>
-                    <Select
-                      value={selectedDc}
-                      onValueChange={(value) => {
-                        setSelectedDc(value)
-                        setSelectedRoom("")
-                        setSelectedRack("")
-                        setStartUnit("")
-                      }}
-                    >
-                      <SelectTrigger id="selectedDc">
-                        <SelectValue placeholder="Select data center" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {dataCenters.map((dc) => (
-                          <SelectItem key={dc.id} value={dc.id}>
-                            {dc.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="selectedRoom">
-                      Room <span className="text-red-500">*</span>
-                    </Label>
-                    <Select
-                      value={selectedRoom}
-                      onValueChange={(value) => {
-                        setSelectedRoom(value)
-                        setSelectedRack("")
-                        setStartUnit("")
-                      }}
-                      disabled={!selectedDc}
-                    >
-                      <SelectTrigger id="selectedRoom">
-                        <SelectValue placeholder="Select room" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {selectedDc &&
-                          dataCenters
-                            .find((dc) => dc.id === selectedDc)
-                            ?.rooms.map((room) => (
-                              <SelectItem key={room.id} value={room.id}>
-                                {room.name}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="selectedService">Service</Label>
+                      <Select
+                        value={selectedService || ""}
+                        onValueChange={(value) => setSelectedService(value === "" || value === "none" ? null : value)}
+                      >
+                        <SelectTrigger id="selectedService">
+                          <SelectValue placeholder="Select a service (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {activeServices.length > 0 ? (
+                            activeServices.map((service) => (
+                              <SelectItem key={service.id} value={service.id}>
+                                {service.name} ({service.department || "No Department"})
                               </SelectItem>
-                            ))}
-                      </SelectContent>
-                    </Select>
+                            ))
+                          ) : (
+                            <SelectItem value="" disabled>
+                              No services available
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="devicePower">Power Consumption (W)</Label>
+                      <Input
+                        id="devicePower"
+                        type="number"
+                        min="0"
+                        value={devicePower}
+                        onChange={(e) => setDevicePower(e.target.value)}
+                        placeholder="e.g. 450"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="selectedRack">
-                      Rack <span className="text-red-500">*</span>
-                    </Label>
-                    <Select
-                      value={selectedRack}
-                      onValueChange={(value) => {
-                        setSelectedRack(value)
-                        setStartUnit("")
-                      }}
-                      disabled={!selectedRoom}
-                    >
-                      <SelectTrigger id="selectedRack">
-                        <SelectValue placeholder="Select rack" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {selectedRoom &&
-                          dataCenters
-                            .find((dc) => dc.id === selectedDc)
-                            ?.rooms.find((room) => room.id === selectedRoom)
-                            ?.racks.map((rack) => (
-                              <SelectItem key={rack.id} value={rack.id}>
-                                {rack.name}
-                              </SelectItem>
-                            ))}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="deviceNotes">Description</Label>
+                    <Textarea
+                      id="deviceNotes"
+                      value={deviceNotes}
+                      onChange={(e) => setDeviceNotes(e.target.value)}
+                      placeholder="Additional information about this device"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="ipAddress">
+                        IP Address <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="ipAddress"
+                        value={ipAddress}
+                        onChange={(e) => setIpAddress(e.target.value)}
+                        placeholder="e.g. 192.168.1.10"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="subnet">
+                        Subnet <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="subnet"
+                        value={subnet}
+                        onChange={(e) => setSubnet(e.target.value)}
+                        placeholder="e.g. 192.168.1.0/24"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="selectedDc">
+                        Data Center <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={selectedDc}
+                        onValueChange={(value) => {
+                          setSelectedDc(value)
+                          setSelectedRoom("")
+                          setSelectedRack("")
+                          setStartUnit("")
+                        }}
+                      >
+                        <SelectTrigger id="selectedDc">
+                          <SelectValue placeholder="Select data center" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dataCenters.map((dc) => (
+                            <SelectItem key={dc.id} value={dc.id}>
+                              {dc.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="selectedRoom">
+                        Room <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={selectedRoom}
+                        onValueChange={(value) => {
+                          setSelectedRoom(value)
+                          setSelectedRack("")
+                          setStartUnit("")
+                        }}
+                        disabled={!selectedDc}
+                      >
+                        <SelectTrigger id="selectedRoom">
+                          <SelectValue placeholder="Select room" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {selectedDc &&
+                            dataCenters
+                              .find((dc) => dc.id === selectedDc)
+                              ?.rooms.map((room) => (
+                                <SelectItem key={room.id} value={room.id}>
+                                  {room.name}
+                                </SelectItem>
+                              ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="selectedRack">
+                        Rack <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={selectedRack}
+                        onValueChange={(value) => {
+                          setSelectedRack(value)
+                          setStartUnit("")
+                        }}
+                        disabled={!selectedRoom}
+                      >
+                        <SelectTrigger id="selectedRack">
+                          <SelectValue placeholder="Select rack" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {selectedRoom &&
+                            dataCenters
+                              .find((dc) => dc.id === selectedDc)
+                              ?.rooms.find((room) => room.id === selectedRoom)
+                              ?.racks.map((rack) => (
+                                <SelectItem key={rack.id} value={rack.id}>
+                                  {rack.name}
+                                </SelectItem>
+                              ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="startUnit">
-                      Start Position <span className="text-red-500">*</span>
-                    </Label>
-                    <Select
-                      value={startUnit}
-                      onValueChange={setStartUnit}
-                      disabled={!selectedRack || availableUnits.length === 0}
-                    >
-                      <SelectTrigger id="startUnit">
-                        <SelectValue
-                          placeholder={availableUnits.length === 0 ? "No space available" : "Select position"}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableUnits.map((unit) => (
-                          <SelectItem key={unit} value={unit.toString()}>
-                            U{unit}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {selectedRack && availableUnits.length === 0 && (
-                      <p className="text-xs text-red-500">
-                        No available space in this rack for the selected device size
-                      </p>
-                    )}
-                  </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={onClose}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">Add & Install</Button>
+                </DialogFooter>
+              </form>
+            </TabsContent>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="endUnit">End Position</Label>
-                    <Input id="endUnit" value={endUnit} readOnly disabled className="bg-muted" />
-                  </div>
-                </div>
-              </>
-            )}
+            <TabsContent value="batch" className="space-y-4">
+              {/* CSV Template Download Area */}
+              <div className="space-y-4">
+                <Alert>
+                  <FileText className="h-4 w-4" />
+                  <AlertDescription>
+                    Download CSV template, fill in device information and upload. Template includes all required field
+                    formats including Service field.
+                  </AlertDescription>
+                </Alert>
 
-            {actionType === "uninstall" && deviceId && (
-              <div className="py-4 text-center">
-                <p className="mb-2">Are you sure you want to uninstall this device?</p>
-                <p className="font-medium">{getDevice(deviceId)?.name}</p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  The device will be removed from its current rack but will remain in the inventory.
-                </p>
+                <Button onClick={downloadCSVTemplate} variant="outline" className="w-full">
+                  <Download className="h-4 w-4 mr-2" />
+                  Download CSV Template
+                </Button>
               </div>
-            )}
-          </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" variant={actionType === "uninstall" ? "destructive" : "default"}>
-              {actionType === "install" && (deviceId === "new" ? "Add & Install" : "Install")}
-              {actionType === "uninstall" && "Uninstall"}
-              {actionType === "move" && "Move"}
-            </Button>
-          </DialogFooter>
-        </form>
+              {/* File Upload Area */}
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  dragActive ? "border-primary bg-primary/10" : "border-muted-foreground/25"
+                }`}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+              >
+                <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-lg mb-2">Drag CSV file here or click to select file</p>
+                <p className="text-sm text-muted-foreground mb-4">Only .csv format files are supported</p>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleCSVUpload(e.target.files[0])
+                    }
+                  }}
+                  className="hidden"
+                  id="csv-upload"
+                />
+                <Button asChild variant="outline">
+                  <label htmlFor="csv-upload" className="cursor-pointer">
+                    Select File
+                  </label>
+                </Button>
+              </div>
+
+              {/* Upload Progress */}
+              {isUploading && (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                  <span>Processing file...</span>
+                </div>
+              )}
+
+              {/* Preview Table Area */}
+              {csvData.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Data Preview</h3>
+                    <div className="flex space-x-2">
+                      <Badge variant="outline">Total {csvData.length} records</Badge>
+                      <Badge variant="default">{csvData.filter((row) => !row.hasError).length} correct</Badge>
+                      {csvErrors.length > 0 && (
+                        <Badge variant="destructive">{csvData.filter((row) => row.hasError).length} errors</Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg overflow-x-auto max-h-96">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Device Name</TableHead>
+                          <TableHead>Model</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Size(U)</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Service</TableHead>
+                          <TableHead>IP Address</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {csvData.map((row, index) => (
+                          <TableRow key={index} className={row.hasError ? "bg-destructive/10" : ""}>
+                            <TableCell>{row["Device Name"]}</TableCell>
+                            <TableCell>{row["Model"]}</TableCell>
+                            <TableCell>{row["Device Type"]}</TableCell>
+                            <TableCell>{row["Device Size (U)"]}</TableCell>
+                            <TableCell>{row["Location"]}</TableCell>
+                            <TableCell>{row["Service"] || "-"}</TableCell>
+                            <TableCell>{row["IP Address"]}</TableCell>
+                            <TableCell>{row["Status"]}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {/* Error List */}
+              {csvErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <div className="space-y-1">
+                      <p className="font-semibold">Found the following errors:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        {csvErrors.map((error, index) => (
+                          <li key={index} className="text-sm">
+                            {error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button onClick={handleBatchImport} disabled={csvData.length === 0 || csvErrors.length > 0}>
+                  Import {csvData.filter((row) => !row.hasError).length} Devices
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
+        ) : (
+          /* Other action types form */
+          <form onSubmit={handleSubmit}>
+            <div className="mt-4 grid gap-4 py-4">
+              {((actionType === "install" && deviceId !== "new") || actionType === "move") && (
+                <>
+                  {/* Service Selection for existing device */}
+                  <div className="space-y-2">
+                    <Label htmlFor="selectedService">Service</Label>
+                    <Select
+                      value={selectedService || ""}
+                      onValueChange={(value) => setSelectedService(value === "" || value === "none" ? null : value)}
+                    >
+                      <SelectTrigger id="selectedService">
+                        <SelectValue placeholder="Select a service (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {activeServices.length > 0 ? (
+                          activeServices.map((service) => (
+                            <SelectItem key={service.id} value={service.id}>
+                              {service.name} ({service.department || "No Department"})
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="" disabled>
+                            No services available
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              {(actionType === "install" || actionType === "move") && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="selectedDc">
+                        Data Center <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={selectedDc}
+                        onValueChange={(value) => {
+                          setSelectedDc(value)
+                          setSelectedRoom("")
+                          setSelectedRack("")
+                          setStartUnit("")
+                        }}
+                      >
+                        <SelectTrigger id="selectedDc">
+                          <SelectValue placeholder="Select data center" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dataCenters.map((dc) => (
+                            <SelectItem key={dc.id} value={dc.id}>
+                              {dc.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="selectedRoom">
+                        Room <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={selectedRoom}
+                        onValueChange={(value) => {
+                          setSelectedRoom(value)
+                          setSelectedRack("")
+                          setStartUnit("")
+                        }}
+                        disabled={!selectedDc}
+                      >
+                        <SelectTrigger id="selectedRoom">
+                          <SelectValue placeholder="Select room" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {selectedDc &&
+                            dataCenters
+                              .find((dc) => dc.id === selectedDc)
+                              ?.rooms.map((room) => (
+                                <SelectItem key={room.id} value={room.id}>
+                                  {room.name}
+                                </SelectItem>
+                              ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="selectedRack">
+                        Rack <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={selectedRack}
+                        onValueChange={(value) => {
+                          setSelectedRack(value)
+                          setStartUnit("")
+                        }}
+                        disabled={!selectedRoom}
+                      >
+                        <SelectTrigger id="selectedRack">
+                          <SelectValue placeholder="Select rack" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {selectedRoom &&
+                            dataCenters
+                              .find((dc) => dc.id === selectedDc)
+                              ?.rooms.find((room) => room.id === selectedRoom)
+                              ?.racks.map((rack) => (
+                                <SelectItem key={rack.id} value={rack.id}>
+                                  {rack.name}
+                                </SelectItem>
+                              ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="startUnit">
+                        Start Position <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={startUnit}
+                        onValueChange={setStartUnit}
+                        disabled={!selectedRack || availableUnits.length === 0}
+                      >
+                        <SelectTrigger id="startUnit">
+                          <SelectValue
+                            placeholder={availableUnits.length === 0 ? "No space available" : "Select position"}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableUnits.map((unit) => (
+                            <SelectItem key={unit} value={unit.toString()}>
+                              U{unit}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedRack && availableUnits.length === 0 && (
+                        <p className="text-xs text-red-500">
+                          No available space in this rack for the selected device size
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="endUnit">End Position</Label>
+                      <Input id="endUnit" value={endUnit} readOnly disabled className="bg-muted" />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {actionType === "uninstall" && deviceId && (
+                <div className="py-4 text-center">
+                  <p className="mb-2">Are you sure you want to uninstall this device?</p>
+                  <p className="font-medium">{getDevice(deviceId)?.name}</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    The device will be removed from its current rack but will remain in the inventory.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" variant={actionType === "uninstall" ? "destructive" : "default"}>
+                {actionType === "install" && (deviceId === "new" ? "Add & Install" : "Install")}
+                {actionType === "uninstall" && "Uninstall"}
+                {actionType === "move" && "Move"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   )

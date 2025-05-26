@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,6 +18,11 @@ import { useDataCenterStore } from "@/lib/data-center-store"
 import { toast } from "@/components/ui/use-toast"
 import { AddDeviceForm } from "@/components/add-device-form"
 import type { DataCenter } from "@/models/data-center"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Upload, Download, FileText, AlertCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface UserDeviceActionModalProps {
   isOpen: boolean
@@ -34,9 +41,16 @@ export function UserDeviceActionModal({
   dataCenters,
   deviceId,
 }: UserDeviceActionModalProps) {
-  // 獲取所有服務
-  const { findRack, getDevice, getAllDevices, getAllServices, moveDevice, deleteDevice } = useDataCenterStore()
-  const services = getAllServices ? getAllServices() : []
+  const {
+    findRack,
+    getDevice,
+    getAllDevices,
+    moveDevice,
+    deleteDevice,
+    addDevice,
+    getAllServices,
+    assignDeviceToService,
+  } = useDataCenterStore()
 
   // 選擇的數據中心、房間和機櫃
   const [selectedDataCenter, setSelectedDataCenter] = useState<string>("")
@@ -55,8 +69,22 @@ export function UserDeviceActionModal({
   // 處理中狀態
   const [isProcessing, setIsProcessing] = useState(false)
 
+  // Batch import related states
+  const [activeTab, setActiveTab] = useState("single")
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [csvData, setCsvData] = useState<any[]>([])
+  const [csvErrors, setCsvErrors] = useState<string[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
+
   // 所有設備列表
   const allDevices = getAllDevices ? getAllDevices() : []
+
+  // Get all services for dropdown
+  const services = getAllServices()
+  const activeServices = services
+    .filter((service) => service.status === "Active")
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   // 重置表單
   const resetForm = () => {
@@ -69,6 +97,271 @@ export function UserDeviceActionModal({
     setTargetRack("")
     setTargetPosition("")
     setIsProcessing(false)
+
+    // Reset batch import states
+    setActiveTab("single")
+    setCsvFile(null)
+    setCsvData([])
+    setCsvErrors([])
+    setIsUploading(false)
+    setDragActive(false)
+  }
+
+  // CSV template download
+  const downloadCSVTemplate = () => {
+    const template = `Device Name,Model,Device Type,Device Size (U),Location,Status,Service,Description,IP Address,Management Type
+Server-001,Dell R740,Server,2,DC-A Room 1 Rack 2,Active,Web Service,Web Server,192.168.1.100,Management
+Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.101,Management`
+
+    const blob = new Blob([template], { type: "text/csv" })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "device_import_template.csv"
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
+
+  // Handle CSV file upload
+  const handleCSVUpload = async (file: File) => {
+    setIsUploading(true)
+    setCsvErrors([])
+
+    try {
+      const text = await file.text()
+      const lines = text.split("\n").filter((line) => line.trim())
+      const headers = lines[0].split(",").map((h) => h.trim())
+
+      const expectedHeaders = [
+        "Device Name",
+        "Model",
+        "Device Type",
+        "Device Size (U)",
+        "Location",
+        "Status",
+        "Service",
+        "Description",
+        "IP Address",
+        "Management Type",
+      ]
+
+      // Check headers
+      const missingHeaders = expectedHeaders.filter((h) => !headers.includes(h))
+      if (missingHeaders.length > 0) {
+        setCsvErrors([`Missing required columns: ${missingHeaders.join(", ")}`])
+        setIsUploading(false)
+        return
+      }
+
+      const data = []
+      const errors = []
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(",").map((v) => v.trim())
+        const row: any = {}
+
+        headers.forEach((header, index) => {
+          row[header] = values[index] || ""
+        })
+
+        // Validate required fields
+        if (!row["Device Name"]) {
+          errors.push(`Row ${i + 1}: Device Name cannot be empty`)
+        }
+        if (!row["Model"]) {
+          errors.push(`Row ${i + 1}: Model cannot be empty`)
+        }
+        if (!row["Device Type"]) {
+          errors.push(`Row ${i + 1}: Device Type cannot be empty`)
+        }
+        if (!row["Device Size (U)"] || isNaN(Number(row["Device Size (U)"]))) {
+          errors.push(`Row ${i + 1}: Device Size must be a number`)
+        }
+
+        // Validate Service if provided
+        if (row["Service"] && row["Service"].trim() !== "") {
+          const serviceName = row["Service"].trim()
+          const foundService = services.find((s) => s.name === serviceName)
+          if (!foundService) {
+            // Find similar service names for suggestions
+            const suggestions = services
+              .filter((s) => s.name.toLowerCase().includes(serviceName.toLowerCase()))
+              .map((s) => s.name)
+              .slice(0, 3)
+
+            let errorMsg = `Row ${i + 1}: Service - Cannot find service '${serviceName}'`
+            if (suggestions.length > 0) {
+              errorMsg += `. Did you mean: ${suggestions.join(", ")}?`
+            }
+            errors.push(errorMsg)
+          }
+        }
+
+        // Validate IP address format
+        if (row["IP Address"]) {
+          const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/
+          if (!ipRegex.test(row["IP Address"])) {
+            errors.push(`Row ${i + 1}: Invalid IP address format`)
+          }
+        }
+
+        row.rowIndex = i + 1
+        row.hasError = errors.some((error) => error.includes(`Row ${i + 1}`))
+        data.push(row)
+      }
+
+      setCsvData(data)
+      setCsvErrors(errors)
+      setCsvFile(file)
+    } catch (error) {
+      setCsvErrors(["Failed to read file. Please check the file format."])
+    }
+
+    setIsUploading(false)
+  }
+
+  // Handle drag and drop
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true)
+    } else if (e.type === "dragleave") {
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0]
+      if (file.type === "text/csv" || file.name.endsWith(".csv")) {
+        handleCSVUpload(file)
+      } else {
+        setCsvErrors(["Please upload a CSV file"])
+      }
+    }
+  }
+
+  // Handle batch import
+  const handleBatchImport = async () => {
+    const validData = csvData.filter((row) => !row.hasError)
+
+    try {
+      for (const row of validData) {
+        // Parse location information
+        const locationParts = row["Location"].split(" ")
+        let dcName = "",
+          roomName = "",
+          rackName = ""
+
+        if (locationParts.length >= 3) {
+          dcName = locationParts[0]
+          roomName = locationParts[1] + " " + locationParts[2]
+          rackName = locationParts[3] + " " + locationParts[4]
+        }
+
+        // Find corresponding data center, room and rack
+        const dc = dataCenters.find((d) => d.name === dcName)
+        if (!dc) continue
+
+        const room = dc.rooms.find((r) => r.name === roomName)
+        if (!room) continue
+
+        const rack = room.racks.find((r) => r.name === rackName)
+        if (!rack) continue
+
+        // Find service if specified
+        let serviceId = null
+        let serviceName = null
+        if (row["Service"] && row["Service"].trim() !== "") {
+          const foundService = services.find((s) => s.name === row["Service"].trim())
+          if (foundService) {
+            serviceId = foundService.id
+            serviceName = foundService.name
+          }
+        }
+
+        // Find available position
+        const deviceSize = Number(row["Device Size (U)"])
+        let availablePosition = null
+
+        for (let i = 1; i <= rack.totalUnits - deviceSize + 1; i++) {
+          let canFit = true
+          for (let j = 0; j < deviceSize; j++) {
+            if (rack.units[i + j - 1].deviceId !== null) {
+              canFit = false
+              break
+            }
+          }
+          if (canFit) {
+            availablePosition = i
+            break
+          }
+        }
+
+        if (!availablePosition) continue
+
+        const newDeviceId = `dev-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+
+        const deviceInfo = {
+          id: newDeviceId,
+          name: row["Device Name"],
+          type: row["Device Type"],
+          size: deviceSize,
+          ips: row["IP Address"]
+            ? [
+                {
+                  id: `ip-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                  address: row["IP Address"],
+                  subnet: "255.255.255.0",
+                  gateway: "192.168.1.1",
+                  status: "Assigned" as const,
+                  deviceId: newDeviceId,
+                  deviceName: row["Device Name"],
+                  serviceId: serviceId,
+                  serviceName: serviceName,
+                  lastUpdated: new Date().toISOString().split("T")[0],
+                },
+              ]
+            : [],
+          status: (row["Status"] || "Active") as "Active" | "Inactive" | "Maintenance" | "Decommissioned",
+          powerConsumption: null,
+          installationDate: new Date().toISOString().split("T")[0],
+          description: row["Description"] || "",
+          model: row["Model"],
+          serviceId: serviceId,
+          serviceName: serviceName,
+        }
+
+        addDevice(dc.id, room.id, rack.id, availablePosition, deviceInfo)
+
+        // Assign device to service if specified
+        if (serviceId) {
+          assignDeviceToService(newDeviceId, serviceId)
+        }
+      }
+
+      toast({
+        title: "Success",
+        description: `Successfully imported ${validData.length} devices`,
+      })
+
+      if (onSuccess) {
+        onSuccess()
+      }
+
+      onClose()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Batch import failed",
+        variant: "destructive",
+      })
+    }
   }
 
   // 當模態框打開時重置表單
@@ -360,73 +653,280 @@ export function UserDeviceActionModal({
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="datacenter">Data Center</Label>
-            <Select value={selectedDataCenter} onValueChange={setSelectedDataCenter}>
-              <SelectTrigger id="datacenter">
-                <SelectValue placeholder="Select data center" />
-              </SelectTrigger>
-              <SelectContent>
-                {dataCenters.map((dc) => (
-                  <SelectItem key={dc.id} value={dc.id}>
-                    {dc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        {actionType === "install" ? (
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="single">Single Device</TabsTrigger>
+              <TabsTrigger value="batch">Batch Import</TabsTrigger>
+            </TabsList>
 
-          <div className="space-y-2">
-            <Label htmlFor="room">Room</Label>
-            <Select value={selectedRoom} onValueChange={setSelectedRoom} disabled={!selectedDataCenter}>
-              <SelectTrigger id="room">
-                <SelectValue placeholder="Select room" />
-              </SelectTrigger>
-              <SelectContent>
-                {dataCenters
-                  .find((dc) => dc.id === selectedDataCenter)
-                  ?.rooms.map((room) => (
-                    <SelectItem key={room.id} value={room.id}>
-                      {room.name}
+            <TabsContent value="single" className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="datacenter">Data Center</Label>
+                  <Select value={selectedDataCenter} onValueChange={setSelectedDataCenter}>
+                    <SelectTrigger id="datacenter">
+                      <SelectValue placeholder="Select data center" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {dataCenters.map((dc) => (
+                        <SelectItem key={dc.id} value={dc.id}>
+                          {dc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="room">Room</Label>
+                  <Select value={selectedRoom} onValueChange={setSelectedRoom} disabled={!selectedDataCenter}>
+                    <SelectTrigger id="room">
+                      <SelectValue placeholder="Select room" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {dataCenters
+                        .find((dc) => dc.id === selectedDataCenter)
+                        ?.rooms.map((room) => (
+                          <SelectItem key={room.id} value={room.id}>
+                            {room.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rack">Rack</Label>
+                  <Select value={selectedRack} onValueChange={setSelectedRack} disabled={!selectedRoom}>
+                    <SelectTrigger id="rack">
+                      <SelectValue placeholder="Select rack" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {dataCenters
+                        .find((dc) => dc.id === selectedDataCenter)
+                        ?.rooms.find((room) => room.id === selectedRoom)
+                        ?.racks.map((rack) => (
+                          <SelectItem key={rack.id} value={rack.id}>
+                            {rack.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {rack ? (
+                <AddDeviceForm
+                  rack={rack}
+                  onSuccess={onSuccess}
+                  dataCenterId={selectedDataCenter}
+                  roomId={selectedRoom}
+                  rackId={selectedRack}
+                />
+              ) : (
+                <p className="text-muted-foreground">Please select a rack to install a device</p>
+              )}
+            </TabsContent>
+
+            <TabsContent value="batch" className="space-y-4">
+              {/* CSV Template Download Area */}
+              <div className="space-y-4">
+                <Alert>
+                  <FileText className="h-4 w-4" />
+                  <AlertDescription>
+                    Download CSV template, fill in device information and upload. Template includes all required field
+                    formats including Service field.
+                  </AlertDescription>
+                </Alert>
+
+                <Button onClick={downloadCSVTemplate} variant="outline" className="w-full">
+                  <Download className="h-4 w-4 mr-2" />
+                  Download CSV Template
+                </Button>
+              </div>
+
+              {/* File Upload Area */}
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  dragActive ? "border-primary bg-primary/10" : "border-muted-foreground/25"
+                }`}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+              >
+                <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-lg mb-2">Drag CSV file here or click to select file</p>
+                <p className="text-sm text-muted-foreground mb-4">Only .csv format files are supported</p>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleCSVUpload(e.target.files[0])
+                    }
+                  }}
+                  className="hidden"
+                  id="csv-upload"
+                />
+                <Button asChild variant="outline">
+                  <label htmlFor="csv-upload" className="cursor-pointer">
+                    Select File
+                  </label>
+                </Button>
+              </div>
+
+              {/* Upload Progress */}
+              {isUploading && (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                  <span>Processing file...</span>
+                </div>
+              )}
+
+              {/* Preview Table Area */}
+              {csvData.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Data Preview</h3>
+                    <div className="flex space-x-2">
+                      <Badge variant="outline">Total {csvData.length} records</Badge>
+                      <Badge variant="default">{csvData.filter((row) => !row.hasError).length} correct</Badge>
+                      {csvErrors.length > 0 && (
+                        <Badge variant="destructive">{csvData.filter((row) => row.hasError).length} errors</Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg overflow-x-auto max-h-96">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Device Name</TableHead>
+                          <TableHead>Model</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Size(U)</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>Service</TableHead>
+                          <TableHead>IP Address</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {csvData.map((row, index) => (
+                          <TableRow key={index} className={row.hasError ? "bg-destructive/10" : ""}>
+                            <TableCell>{row["Device Name"]}</TableCell>
+                            <TableCell>{row["Model"]}</TableCell>
+                            <TableCell>{row["Device Type"]}</TableCell>
+                            <TableCell>{row["Device Size (U)"]}</TableCell>
+                            <TableCell>{row["Location"]}</TableCell>
+                            <TableCell>{row["Service"] || "-"}</TableCell>
+                            <TableCell>{row["IP Address"]}</TableCell>
+                            <TableCell>{row["Status"]}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+
+              {/* Error List */}
+              {csvErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <div className="space-y-1">
+                      <p className="font-semibold">Found the following errors:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        {csvErrors.map((error, index) => (
+                          <li key={index} className="text-sm">
+                            {error}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button onClick={handleBatchImport} disabled={csvData.length === 0 || csvErrors.length > 0}>
+                  Import {csvData.filter((row) => !row.hasError).length} Devices
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="datacenter">Data Center</Label>
+              <Select value={selectedDataCenter} onValueChange={setSelectedDataCenter}>
+                <SelectTrigger id="datacenter">
+                  <SelectValue placeholder="Select data center" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dataCenters.map((dc) => (
+                    <SelectItem key={dc.id} value={dc.id}>
+                      {dc.name}
                     </SelectItem>
                   ))}
-              </SelectContent>
-            </Select>
-          </div>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="rack">Rack</Label>
-            <Select value={selectedRack} onValueChange={setSelectedRack} disabled={!selectedRoom}>
-              <SelectTrigger id="rack">
-                <SelectValue placeholder="Select rack" />
-              </SelectTrigger>
-              <SelectContent>
-                {dataCenters
-                  .find((dc) => dc.id === selectedDataCenter)
-                  ?.rooms.find((room) => room.id === selectedRoom)
-                  ?.racks.map((rack) => (
-                    <SelectItem key={rack.id} value={rack.id}>
-                      {rack.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="room">Room</Label>
+              <Select value={selectedRoom} onValueChange={setSelectedRoom} disabled={!selectedDataCenter}>
+                <SelectTrigger id="room">
+                  <SelectValue placeholder="Select room" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dataCenters
+                    .find((dc) => dc.id === selectedDataCenter)
+                    ?.rooms.map((room) => (
+                      <SelectItem key={room.id} value={room.id}>
+                        {room.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        {rack ? (
+            <div className="space-y-2">
+              <Label htmlFor="rack">Rack</Label>
+              <Select value={selectedRack} onValueChange={setSelectedRack} disabled={!selectedRoom}>
+                <SelectTrigger id="rack">
+                  <SelectValue placeholder="Select rack" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dataCenters
+                    .find((dc) => dc.id === selectedDataCenter)
+                    ?.rooms.find((room) => room.id === selectedRoom)
+                    ?.racks.map((rack) => (
+                      <SelectItem key={rack.id} value={rack.id}>
+                        {rack.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+
+        {rack && actionType !== "install" ? (
           <AddDeviceForm
             rack={rack}
             onSuccess={onSuccess}
             dataCenterId={selectedDataCenter}
             roomId={selectedRoom}
             rackId={selectedRack}
-            services={services}
           />
-        ) : (
-          <p className="text-muted-foreground">Please select a rack to install a device</p>
-        )}
+        ) : null}
       </div>
     )
   }
@@ -715,7 +1215,7 @@ export function UserDeviceActionModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{getModalTitle()}</DialogTitle>
           <DialogDescription>{getModalDescription()}</DialogDescription>

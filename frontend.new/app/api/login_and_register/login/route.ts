@@ -6,7 +6,13 @@ import bcrypt from "bcrypt"
 export const dynamic = "force-dynamic"
 
 export async function POST(request: NextRequest) {
-  const body = await request.json()
+  let body
+  try {
+    body = await request.json()
+  } catch (err) {
+    return NextResponse.json({ code: "missing-fields" })
+  }
+	
   const { username, password } = body
 
   const db = await openDB()

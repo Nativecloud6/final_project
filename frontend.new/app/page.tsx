@@ -3,56 +3,91 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 
-export function LoginForm() {
+type AuthResult =
+  | { code: "missing-fields" }
+  | { code: "user-not-exist" }
+  | { code: "password-wrong" }
+  | { code: "login-success"; redirectTo: string }
+  | { code: "user-already-exist" }
+  | { code: "register-success" }
+  | { code: "no-permission" }
+  | { code?: string }
+
+export default function LoginForm() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const router = useRouter()
 
-  const handleLogin = async () => {
-    const res = await fetch("/api/login_and_register/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    })
-    const data = await res.json()
+  const handleAuthResponse = (data: AuthResult) => {
+    const code = data?.code ?? ""
 
-    switch (data.code) {
+    if (!code) {
+      alert("Unexpected error. Please try again.")
+      return
+    }
+
+    switch (code) {
+      case "missing-fields":
+        alert("Username or password missing.")
+        break
+
       case "user-not-exist":
         alert("ERROR: User does not exist.")
         break
+
       case "password-wrong":
         alert("ERROR: Password is incorrect.")
         break
+
+      case "user-already-exist":
+        alert("User already exists.")
+        break
+
+      case "no-permission":
+        alert("You don’t have permission to access that page.")
+        router.push("/")
+        break
+
+      case "register-success":
+        alert("Registered successfully. Logging in...")
+        handleLogin() // ⬅ 註冊成功就登入
+        break
+
       case "login-success":
-        alert("Login successful. Redirecting...")
+        alert("Login successful. Redirecting…")
         router.push(data.redirectTo)
         break
+
       default:
-        alert("Unexpected login error.")
+        alert("Unexpected error code: " + code)
+    }
+  }
+
+  const handleLogin = async () => {
+    try {
+      const res = await fetch("/api/login_and_register/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      })
+      const data = (await res.json()) as AuthResult
+      handleAuthResponse(data)
+    } catch (err) {
+      alert("Network error during login.")
     }
   }
 
   const handleRegister = async () => {
-    const res = await fetch("/api/login_and_register/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    })
-    const data = await res.json()
-
-    switch (data.code) {
-      case "register-success":
-        alert("Registered successfully. Logging in...")
-        await handleLogin()
-        break
-      case "user-already-exist":
-        alert("User already exists.")
-        break
-      case "missing-fields":
-        alert("Username or password missing.")
-        break
-      default:
-        alert("Unexpected registration error.")
+    try {
+      const res = await fetch("/api/login_and_register/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      })
+      const data = (await res.json()) as AuthResult
+      handleAuthResponse(data)
+    } catch (err) {
+      alert("Network error during registration.")
     }
   }
 
@@ -85,14 +120,6 @@ export function LoginForm() {
         </button>
       </div>
     </div>
-  )
-}
-
-export default function Home() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background">
-      <LoginForm />
-    </main>
   )
 }
 
