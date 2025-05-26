@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Check, Save } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -9,86 +9,84 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
-import { useNotificationStore } from "@/lib/notification-store"
 
 export default function UserAccountSettingsPage() {
   const { toast } = useToast()
-  const addNotification = useNotificationStore((state) => state.addNotification)
+  const [statusMsg, setStatusMsg] = useState<string | null>(null)
 
-  // 帳戶設定狀態
-  const [accountForm, setAccountForm] = useState({
-    username: "general_user",
-    email: "user@datacenter.com",
-    department: "Research",
-    position: "Researcher",
-  })
-
-  // 密碼設定狀態
+  const [username, setUsername] = useState("")
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
   })
 
-  // 保存帳戶設定
-  const handleAccountSave = () => {
-    toast({
-      title: "Account settings updated",
-      description: "Your account information has been updated successfully.",
+  useEffect(() => {
+    const cookies = document.cookie.split(";").reduce((acc: any, cookieStr) => {
+      const [key, value] = cookieStr.trim().split("=")
+      acc[key] = decodeURIComponent(value)
+      return acc
+    }, {})
+    setUsername(cookies.username || "")
+  }, [])
+
+  const handleAccountSave = async () => {
+    setStatusMsg(null)
+
+    const res = await fetch("/api/account/update-username", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
     })
 
-    addNotification({
-      title: "Account Updated",
-      message: "Your account settings have been updated successfully.",
-      type: "success",
-    })
+    const data = await res.json()
+    if (data.success) {
+      toast({ title: "Username updated." })
+      setStatusMsg("Success: Username updated.")
+    } else {
+      setStatusMsg(data.message || "Failed to update username.")
+    }
   }
 
-  // 保存密碼設定
-  const handlePasswordSave = () => {
+  const handlePasswordSave = async () => {
+    setStatusMsg(null)
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast({
-        title: "Password mismatch",
-        description: "New password and confirmation do not match.",
-        variant: "destructive",
-      })
+      setStatusMsg("Password confirmation mismatch.")
       return
     }
 
-    if (passwordForm.newPassword.length < 8) {
-      toast({
-        title: "Password too short",
-        description: "Password must be at least 8 characters long.",
-        variant: "destructive",
-      })
+    if (!passwordForm.newPassword || passwordForm.newPassword.length < 4) {
+      setStatusMsg("Password must be at least 4 characters.")
       return
     }
 
-    toast({
-      title: "Password updated",
-      description: "Your password has been updated successfully.",
+    const res = await fetch("/api/account/update-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username,
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      }),
     })
 
-    addNotification({
-      title: "Password Changed",
-      message: "Your password has been changed successfully.",
-      type: "success",
-    })
+    const data = await res.json()
 
-    // 清空密碼表單
-    setPasswordForm({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    })
+    if (data.success) {
+      toast({ title: "Password updated successfully." })
+      setStatusMsg("Success: Password updated.")
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" })
+    } else {
+      setStatusMsg(data.message || "Failed to update password.")
+    }
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Account Settings</h1>
-        <p className="text-muted-foreground">Manage your account settings and change your password</p>
-      </div>
+      <h1 className="text-2xl font-bold tracking-tight">User Account Settings</h1>
+
+      {statusMsg && <div className="text-sm text-red-600 dark:text-red-400 font-medium">{statusMsg}</div>}
 
       <Tabs defaultValue="account" className="space-y-4">
         <TabsList>
@@ -99,50 +97,16 @@ export default function UserAccountSettingsPage() {
         <TabsContent value="account" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Account Information</CardTitle>
-              <CardDescription>Update your account details and personal information</CardDescription>
+              <CardTitle>Account Info</CardTitle>
+              <CardDescription>Change your username</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
-                  <Input
-                    id="username"
-                    value={accountForm.username}
-                    onChange={(e) => setAccountForm({ ...accountForm, username: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={accountForm.email}
-                    onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="department">Department</Label>
-                  <Input
-                    id="department"
-                    value={accountForm.department}
-                    onChange={(e) => setAccountForm({ ...accountForm, department: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="position">Position</Label>
-                  <Input
-                    id="position"
-                    value={accountForm.position}
-                    onChange={(e) => setAccountForm({ ...accountForm, position: e.target.value })}
-                  />
-                </div>
-              </div>
+            <CardContent>
+              <Label htmlFor="username">Username</Label>
+              <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
             </CardContent>
             <CardFooter>
               <Button onClick={handleAccountSave}>
-                <Save className="mr-2 h-4 w-4" />
-                Save Changes
+                <Save className="mr-2 h-4 w-4" /> Save Username
               </Button>
             </CardFooter>
           </Card>
@@ -152,41 +116,21 @@ export default function UserAccountSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>Password</CardTitle>
-              <CardDescription>Change your password to keep your account secure</CardDescription>
+              <CardDescription>Change your password</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="current-password">Current Password</Label>
-                <Input
-                  id="current-password"
-                  type="password"
-                  value={passwordForm.currentPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm New Password</Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                />
-              </div>
+              <Label htmlFor="current-password">Current Password</Label>
+              <Input id="current-password" type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} />
+
+              <Label htmlFor="new-password">New Password</Label>
+              <Input id="new-password" type="password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} />
+
+              <Label htmlFor="confirm-password">Confirm Password</Label>
+              <Input id="confirm-password" type="password" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} />
             </CardContent>
             <CardFooter>
               <Button onClick={handlePasswordSave}>
-                <Check className="mr-2 h-4 w-4" />
-                Update Password
+                <Check className="mr-2 h-4 w-4" /> Update Password
               </Button>
             </CardFooter>
           </Card>

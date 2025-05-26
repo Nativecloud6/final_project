@@ -1,192 +1,116 @@
 "use client"
 
-import { useState } from "react"
-import { Check, Save } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Check } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/components/ui/use-toast"
 import { useNotificationStore } from "@/lib/notification-store"
 
-export default function AccountSettingsPage() {
+export default function AdminAccountSettingsPage() {
   const { toast } = useToast()
   const addNotification = useNotificationStore((state) => state.addNotification)
 
-  // 帳戶設定狀態
-  const [accountForm, setAccountForm] = useState({
-    username: "admin_user",
-    email: "admin@datacenter.com",
-    department: "IT Operations",
-    position: "System Administrator",
-  })
-
-  // 密碼設定狀態
+  const [username, setUsername] = useState("")
+  const [statusMsg, setStatusMsg] = useState<string | null>(null)
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
   })
 
-  // 保存帳戶設定
-  const handleAccountSave = () => {
-    toast({
-      title: "Account settings updated",
-      description: "Your account information has been updated successfully.",
-    })
+  useEffect(() => {
+    const cookies = document.cookie.split(";").reduce((acc: any, cookieStr) => {
+      const [key, value] = cookieStr.trim().split("=")
+      acc[key] = decodeURIComponent(value)
+      return acc
+    }, {})
+    setUsername(cookies.username || "")
+  }, [])
 
-    addNotification({
-      title: "Account Updated",
-      message: "Your account settings have been updated successfully.",
-      type: "success",
-    })
-  }
+  const handlePasswordSave = async () => {
+    console.log("🟢 Clicked Update Password")
+    setStatusMsg(null)
 
-  // 保存密碼設定
-  const handlePasswordSave = () => {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast({
-        title: "Password mismatch",
-        description: "New password and confirmation do not match.",
-        variant: "destructive",
-      })
+      setStatusMsg("Password confirmation mismatch.")
       return
     }
 
-    if (passwordForm.newPassword.length < 8) {
-      toast({
-        title: "Password too short",
-        description: "Password must be at least 8 characters long.",
-        variant: "destructive",
-      })
+    if (passwordForm.newPassword.length < 4) {
+      setStatusMsg("New password must be at least 4 characters.")
       return
     }
 
-    toast({
-      title: "Password updated",
-      description: "Your password has been updated successfully.",
+    const res = await fetch("/api/account/update-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username,
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      }),
     })
 
-    addNotification({
-      title: "Password Changed",
-      message: "Your password has been changed successfully.",
-      type: "success",
-    })
+    const data = await res.json()
 
-    // 清空密碼表單
-    setPasswordForm({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    })
+    if (data.success) {
+      toast({ title: "Success", description: "Password updated." })
+      setStatusMsg("Password updated successfully.")
+      addNotification({
+        title: "Password Changed",
+        message: "Admin password has been changed.",
+        type: "success",
+      })
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" })
+    } else {
+      setStatusMsg(data.message || "Update failed.")
+    }
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Account Settings</h1>
-        <p className="text-muted-foreground">Manage your account settings and change your password</p>
-      </div>
+      <h1 className="text-2xl font-bold tracking-tight">Account Settings (Admin)</h1>
 
-      <Tabs defaultValue="account" className="space-y-4">
+      {statusMsg && (
+        <div className="text-sm text-red-600 dark:text-red-400 font-medium">{statusMsg}</div>
+      )}
+
+      <Tabs defaultValue="password" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="account">Account</TabsTrigger>
           <TabsTrigger value="password">Password</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="account" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Account Information</CardTitle>
-              <CardDescription>Update your account details and personal information</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
-                  <Input
-                    id="username"
-                    value={accountForm.username}
-                    onChange={(e) => setAccountForm({ ...accountForm, username: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={accountForm.email}
-                    onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="department">Department</Label>
-                  <Input
-                    id="department"
-                    value={accountForm.department}
-                    onChange={(e) => setAccountForm({ ...accountForm, department: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="position">Position</Label>
-                  <Input
-                    id="position"
-                    value={accountForm.position}
-                    onChange={(e) => setAccountForm({ ...accountForm, position: e.target.value })}
-                  />
-                </div>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button onClick={handleAccountSave}>
-                <Save className="mr-2 h-4 w-4" />
-                Save Changes
-              </Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="password" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Password</CardTitle>
-              <CardDescription>Change your password to keep your account secure</CardDescription>
+              <CardDescription>Change your password</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="current-password">Current Password</Label>
-                <Input
-                  id="current-password"
-                  type="password"
-                  value={passwordForm.currentPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm New Password</Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                />
-              </div>
+              <Label htmlFor="current-password">Current Password</Label>
+              <Input id="current-password" type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} />
+
+              <Label htmlFor="new-password">New Password</Label>
+              <Input id="new-password" type="password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} />
+
+              <Label htmlFor="confirm-password">Confirm Password</Label>
+              <Input id="confirm-password" type="password" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} />
             </CardContent>
             <CardFooter>
               <Button onClick={handlePasswordSave}>
-                <Check className="mr-2 h-4 w-4" />
-                Update Password
+                <Check className="mr-2 h-4 w-4" /> Update Password
               </Button>
             </CardFooter>
           </Card>
