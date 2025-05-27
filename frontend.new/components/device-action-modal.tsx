@@ -126,13 +126,19 @@ export function DeviceActionModal({ isOpen, onClose, actionType, deviceId }: Dev
     setCsvErrors([])
     setIsUploading(false)
     setDragActive(false)
+
+    // 重置文件輸入元素
+    const fileInput = document.getElementById("csv-upload") as HTMLInputElement
+    if (fileInput) {
+      fileInput.value = ""
+    }
   }
 
   // CSV template download
   const downloadCSVTemplate = () => {
-    const template = `Device Name,Model,Device Type,Device Size (U),Location,Status,Service,Description,IP Address,Management Type
-Server-001,Dell R740,Server,2,DC-A Room 1 Rack 2,Active,Web Service,Web Server,192.168.1.100,Management
-Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.101,Management`
+    const template = `Device Name,Model,Device Type,Device Size (U),Location,Start Position (U),Status,Service,Description,IP Address,Management Type
+Server-001,Dell R740,Server,2,DC-A Room 1 Rack 2,5,Active,Web Service,Web Server,192.168.1.100,Management
+Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,10,Active,,Core Switch,192.168.1.101,Management`
 
     const blob = new Blob([template], { type: "text/csv" })
     const url = window.URL.createObjectURL(blob)
@@ -159,6 +165,7 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
         "Device Type",
         "Device Size (U)",
         "Location",
+        "Start Position (U)",
         "Status",
         "Service",
         "Description",
@@ -197,6 +204,16 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
         }
         if (!row["Device Size (U)"] || isNaN(Number(row["Device Size (U)"]))) {
           errors.push(`Row ${i + 1}: Device Size must be a number`)
+        }
+
+        // 在驗證循環中添加位置驗證
+        if (!row["Start Position (U)"] || isNaN(Number(row["Start Position (U)"]))) {
+          errors.push(`Row ${i + 1}: Start Position must be a number`)
+        } else {
+          const startPos = Number(row["Start Position (U)"])
+          if (startPos < 1 || startPos > 42) {
+            errors.push(`Row ${i + 1}: Start Position must be between 1 and 42`)
+          }
         }
 
         // Validate Service if provided
@@ -239,6 +256,12 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
     }
 
     setIsUploading(false)
+
+    // 重置文件輸入元素，確保可以重複選擇相同文件
+    const fileInput = document.getElementById("csv-upload") as HTMLInputElement
+    if (fileInput) {
+      fileInput.value = ""
+    }
   }
 
   // Handle drag and drop
@@ -273,7 +296,7 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
 
     try {
       for (const row of validData) {
-        // Parse location information
+        // 解析位置信息
         const locationParts = row["Location"].split(" ")
         let dcName = "",
           roomName = "",
@@ -285,7 +308,7 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
           rackName = locationParts[3] + " " + locationParts[4]
         }
 
-        // Find corresponding data center, room and rack
+        // 查找對應的數據中心、房間和機架
         const dc = dataCenters.find((d) => d.name === dcName)
         if (!dc) continue
 
@@ -295,38 +318,29 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
         const rack = room.racks.find((r) => r.name === rackName)
         if (!rack) continue
 
-        // Find service if specified
-        let serviceId = null
-        let serviceName = null
-        if (row["Service"] && row["Service"].trim() !== "") {
-          const foundService = services.find((s) => s.name === row["Service"].trim())
-          if (foundService) {
-            serviceId = foundService.id
-            serviceName = foundService.name
-          }
-        }
-
-        // Find available position
+        // 使用指定的位置而不是自動尋找
+        const specifiedPosition = Number(row["Start Position (U)"])
         const deviceSize = Number(row["Device Size (U)"])
-        let availablePosition = null
 
-        for (let i = 1; i <= rack.totalUnits - deviceSize + 1; i++) {
-          let canFit = true
-          for (let j = 0; j < deviceSize; j++) {
-            if (rack.units[i + j - 1].deviceId !== null) {
-              canFit = false
-              break
-            }
-          }
-          if (canFit) {
-            availablePosition = i
+        // 檢查指定位置是否可用
+        let positionAvailable = true
+        for (let j = 0; j < deviceSize; j++) {
+          const unitIndex = specifiedPosition + j - 1
+          if (unitIndex >= rack.units.length || rack.units[unitIndex].deviceId !== null) {
+            positionAvailable = false
             break
           }
         }
 
-        if (!availablePosition) continue
+        if (!positionAvailable) {
+          console.warn(`Position ${specifiedPosition} not available for device ${row["Device Name"]}`)
+          continue
+        }
 
+        // 其餘邏輯保持不變...
         const newDeviceId = `dev-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+
+        const serviceName = null
 
         const deviceInfo = {
           id: newDeviceId,
@@ -343,7 +357,7 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
                   status: "Assigned" as const,
                   deviceId: newDeviceId,
                   deviceName: row["Device Name"],
-                  serviceId: serviceId,
+                  serviceId: null,
                   serviceName: serviceName,
                   lastUpdated: new Date().toISOString().split("T")[0],
                 },
@@ -354,13 +368,20 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
           installationDate: new Date().toISOString().split("T")[0],
           description: row["Description"] || "",
           model: row["Model"],
-          serviceId: serviceId,
+          serviceId: null,
           serviceName: serviceName,
         }
 
-        addDevice(dc.id, room.id, rack.id, availablePosition, deviceInfo)
+        addDevice(dc.id, room.id, rack.id, specifiedPosition, deviceInfo)
 
-        // Assign device to service if specified
+        // 分配服務...
+        let serviceId = null
+        if (row["Service"] && row["Service"].trim() !== "") {
+          const foundService = services.find((s) => s.name === row["Service"].trim())
+          if (foundService) {
+            serviceId = foundService.id
+          }
+        }
         if (serviceId) {
           assignDeviceToService(newDeviceId, serviceId)
         }
@@ -370,6 +391,16 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
         title: "Success",
         description: `Successfully imported ${validData.length} devices`,
       })
+
+      // 重置文件輸入和相關狀態
+      const fileInput = document.getElementById("csv-upload") as HTMLInputElement
+      if (fileInput) {
+        fileInput.value = ""
+      }
+
+      setCsvFile(null)
+      setCsvData([])
+      setCsvErrors([])
 
       onClose()
     } catch (error) {
@@ -1042,8 +1073,7 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
                 <Alert>
                   <FileText className="h-4 w-4" />
                   <AlertDescription>
-                    Download CSV template, fill in device information and upload. Template includes all required field
-                    formats including Service field.
+                    Download CSV template, fill in device information and upload. Ensure it follows the correct format.
                   </AlertDescription>
                 </Alert>
 
@@ -1115,6 +1145,7 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
                           <TableHead>Type</TableHead>
                           <TableHead>Size(U)</TableHead>
                           <TableHead>Location</TableHead>
+                          <TableHead>Position</TableHead>
                           <TableHead>Service</TableHead>
                           <TableHead>IP Address</TableHead>
                           <TableHead>Status</TableHead>
@@ -1128,6 +1159,7 @@ Switch-001,Cisco 2960,Switch,1,DC-A Room 1 Rack 2,Active,,Core Switch,192.168.1.
                             <TableCell>{row["Device Type"]}</TableCell>
                             <TableCell>{row["Device Size (U)"]}</TableCell>
                             <TableCell>{row["Location"]}</TableCell>
+                            <TableCell>{row["Start Position (U)"]}</TableCell>
                             <TableCell>{row["Service"] || "-"}</TableCell>
                             <TableCell>{row["IP Address"]}</TableCell>
                             <TableCell>{row["Status"]}</TableCell>
